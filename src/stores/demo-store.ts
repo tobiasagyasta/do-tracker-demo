@@ -149,9 +149,56 @@ function createMultiTransactionInvoiceExamples(orders: DeliveryOrder[]): {
         { id: "trx-do-002-02", transactionNumber: "SPB-2609-002B", truckPlate: "KT 9014 BP", driverName: "Ahmad Fauzan", tonnage: 28.7, loadingDate: "2026-09-04", unloadingDate: "2026-09-05" },
       ],
     },
+    {
+      parentId: "do-006",
+      invoiceId: "INV-SLS-2609-M006",
+      invoiceDate: "2026-09-15",
+      paymentDate: "2026-09-22",
+      transactions: [
+        { id: "trx-do-006-01", transactionNumber: "SPB-2609-006A", truckPlate: "B 9823 TXU", driverName: "Yusuf Maulana", tonnage: 32.6, loadingDate: "2026-09-08", unloadingDate: "2026-09-09" },
+        { id: "trx-do-006-02", transactionNumber: "SPB-2609-006B", truckPlate: "B 9018 TXV", driverName: "Bagus Ramadhan", tonnage: 31.4, loadingDate: "2026-09-08", unloadingDate: "2026-09-09" },
+      ],
+    },
   ];
 
-  const transactions = examples.flatMap((example) => {
+  const extraParentTransactions = [
+    {
+      parentId: "do-003",
+      salesInvoiceId: undefined,
+      transactions: [
+        { id: "trx-do-003-01", transactionNumber: "SPB-2609-003A", truckPlate: "DA 7654 JL", driverName: "Bambang Suryadi", tonnage: 33.2, loadingDate: "2026-09-04", unloadingDate: "2026-09-05", partnerPaidAt: "2026-09-11" },
+        { id: "trx-do-003-02", transactionNumber: "SPB-2609-003B", truckPlate: "DA 8120 JM", driverName: "Sofyan Hadi", tonnage: 32.5, loadingDate: "2026-09-05", unloadingDate: "2026-09-06", partnerPaidAt: "2026-09-11" },
+      ],
+    },
+    {
+      parentId: "do-004",
+      salesInvoiceId: undefined,
+      transactions: [
+        { id: "trx-do-004-01", transactionNumber: "SPB-2609-004A", truckPlate: "KH 9345 AD", driverName: "Hendra Wijaya", tonnage: 30.7, loadingDate: "2026-09-06", unloadingDate: "2026-09-07" },
+        { id: "trx-do-004-02", transactionNumber: "SPB-2609-004B", truckPlate: "KH 9901 AE", driverName: "Irfan Saputra", tonnage: 29.8, loadingDate: "2026-09-06", unloadingDate: "2026-09-07" },
+        { id: "trx-do-004-03", transactionNumber: "SPB-2609-004C", truckPlate: "KH 8127 AF", driverName: "Bayu Nugraha", tonnage: 31.1, loadingDate: "2026-09-07", unloadingDate: "2026-09-08" },
+      ],
+    },
+    {
+      parentId: "do-008",
+      salesInvoiceId: undefined,
+      transactions: [
+        { id: "trx-do-008-01", transactionNumber: "SPB-2609-008A", truckPlate: "DA 9021 MQ", driverName: "Mulyadi Rahman", tonnage: 34.1, loadingDate: "2026-09-11", unloadingDate: "2026-09-12", partnerPaidAt: "2026-09-16" },
+        { id: "trx-do-008-02", transactionNumber: "SPB-2609-008B", truckPlate: "DA 8873 MR", driverName: "Farhan Aziz", tonnage: 33.6, loadingDate: "2026-09-12", unloadingDate: "2026-09-13", partnerPaidAt: "2026-09-16" },
+        { id: "trx-do-008-03", transactionNumber: "SPB-2609-008C", truckPlate: "DA 7762 MS", driverName: "Haris Maulana", tonnage: 32.9, loadingDate: "2026-09-12", unloadingDate: "2026-09-13", partnerPaidAt: "2026-09-16" },
+      ],
+    },
+    {
+      parentId: "do-012",
+      salesInvoiceId: undefined,
+      transactions: [
+        { id: "trx-do-012-01", transactionNumber: "SPB-2609-012A", truckPlate: "BA 9134 VN", driverName: "Eko Purnomo", tonnage: 29.9, loadingDate: "2026-09-15", unloadingDate: "2026-09-16", partnerPaidAt: "2026-09-20" },
+        { id: "trx-do-012-02", transactionNumber: "SPB-2609-012B", truckPlate: "BA 8420 VP", driverName: "Wawan Kurnia", tonnage: 30.4, loadingDate: "2026-09-15", unloadingDate: "2026-09-16" },
+      ],
+    },
+  ];
+
+  const invoiceTransactions = examples.flatMap((example) => {
     const order = ordersById.get(example.parentId);
     if (!order) return [];
 
@@ -162,11 +209,25 @@ function createMultiTransactionInvoiceExamples(orders: DeliveryOrder[]): {
       salesInvoiceId: example.invoiceId,
     }));
   });
+  const extraTransactions = extraParentTransactions.flatMap((example) => {
+    const order = ordersById.get(example.parentId);
+    if (!order) return [];
+
+    return example.transactions.map((transaction) => ({
+      ...legacyDeliveryOrderToTransaction(order),
+      ...transaction,
+      deliveryOrderId: order.id,
+      partnerPaidAt: transaction.partnerPaidAt,
+      partnerPaymentStatus: transaction.partnerPaidAt ? "PAID" as const : "UNPAID" as const,
+      salesInvoiceId: example.salesInvoiceId,
+    }));
+  });
+  const transactions = [...invoiceTransactions, ...extraTransactions];
   const invoices = examples.flatMap((example) => {
     const order = ordersById.get(example.parentId);
     if (!order) return [];
 
-    const invoiceTransactions = transactions.filter(
+    const invoiceLines = transactions.filter(
       (transaction) => transaction.deliveryOrderId === order.id,
     );
 
@@ -176,12 +237,12 @@ function createMultiTransactionInvoiceExamples(orders: DeliveryOrder[]): {
       invoiceDate: example.invoiceDate,
       customerName: order.customerName,
       customerBillingDetails: { name: order.customerName },
-      transactionIds: invoiceTransactions.map((transaction) => transaction.id),
+      transactionIds: invoiceLines.map((transaction) => transaction.id),
       status: example.paymentDate ? "PAID" : "ISSUED",
       paymentDate: example.paymentDate,
       pph23Rate: INVOICE_PPH23_RATE,
       rentalDepositDeduction: 0,
-      lines: invoiceTransactions.map((transaction) => createInvoiceLineSnapshot(transaction, order)),
+      lines: invoiceLines.map((transaction) => createInvoiceLineSnapshot(transaction, order)),
     } satisfies SalesInvoice];
   });
 
