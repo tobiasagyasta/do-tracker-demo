@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, Plus, Search } from "lucide-react";
-import { startTransition, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Copy, Plus, Search, Trash2 } from "lucide-react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { QuickCreatePartner } from "@/components/partners/quick-create-partner";
 import { StoreLoading } from "@/components/store-loading";
@@ -15,108 +15,122 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatTonnage } from "@/lib/delivery-orders";
 import {
-  calculateEstimatedGrossMargin,
-  calculatePartnerPph23,
-  calculatePurchaseTotal,
-  calculateSalesPph23,
-  calculateSalesTotal,
   generateNextDeliveryOrderNumber,
   normalizeVehiclePlate,
-  validateDeliveryOrderDates,
 } from "@/lib/delivery-order-creation";
 import { formatRupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
+  selectDeliveryOrderTransactions,
   selectDeliveryOrders,
   selectHasHydrated,
   selectPartners,
 } from "@/stores/demo-store";
 import { useDemoStore } from "@/stores/demo-store-provider";
-import type { CreateDeliveryOrderInput } from "@/types/delivery-order";
+import type { CreateDeliveryOrderWithTransactionsInput } from "@/types/delivery-order";
 import type { Partner } from "@/types/partner";
 
 type SubmitMode = "detail" | "again";
-
-type FieldKey =
-  | "loadingDate"
-  | "unloadingDate"
-  | "partnerId"
+type ParentField =
   | "customerName"
+  | "partnerId"
   | "originMine"
   | "destinationPort"
+  | "salesRatePerTon"
+  | "roadMoney"
+  | "partnerRatePerTon"
+  | "gasMoney";
+type TransactionField =
+  | "transactionNumber"
   | "truckPlate"
   | "driverName"
+  | "loadingDate"
+  | "unloadingDate"
+  | "loadingLocation"
+  | "unloadingLocation"
   | "tonnage"
-  | "transportPrice"
+  | "category"
+  | "salesRatePerTon"
   | "roadMoney"
-  | "gasMoney"
-  | "partnerPph23"
-  | "sellingPrice"
-  | "salesGasMoney"
-  | "salesPph23";
+  | "partnerRatePerTon"
+  | "gasMoney";
 
-type FieldErrors = Partial<Record<FieldKey, string>>;
-
-interface DeliveryOrderFormState {
-  loadingDate: string;
-  unloadingDate: string;
-  partnerId: string;
+interface FormState {
   customerName: string;
+  partnerId: string;
   originMine: string;
   destinationPort: string;
+  salesRatePerTon: string;
+  roadMoney: string;
+  partnerRatePerTon: string;
+  gasMoney: string;
+}
+
+interface TransactionRow {
+  clientId: string;
+  transactionNumber: string;
   truckPlate: string;
   driverName: string;
+  loadingDate: string;
+  unloadingDate: string;
+  loadingLocation: string;
+  unloadingLocation: string;
   tonnage: string;
-  transportPrice: string;
+  category: string;
+  salesRatePerTon: string;
   roadMoney: string;
+  partnerRatePerTon: string;
   gasMoney: string;
-  partnerPph23: string;
-  isPartnerPphManual: boolean;
-  sellingPrice: string;
-  salesGasMoney: string;
-  salesPph23: string;
-  isSalesPphManual: boolean;
 }
+
+type FieldErrors = Partial<Record<ParentField, string>>;
+type TransactionErrors = Record<string, Partial<Record<TransactionField, string>>>;
 
 const today = new Date().toISOString().slice(0, 10);
 
-const initialForm: DeliveryOrderFormState = {
-  loadingDate: today,
-  unloadingDate: "",
-  partnerId: "",
+const initialForm: FormState = {
   customerName: "",
+  partnerId: "",
   originMine: "",
   destinationPort: "",
-  truckPlate: "",
-  driverName: "",
-  tonnage: "",
-  transportPrice: "",
+  salesRatePerTon: "",
   roadMoney: "0",
+  partnerRatePerTon: "",
   gasMoney: "0",
-  partnerPph23: "",
-  isPartnerPphManual: false,
-  sellingPrice: "",
-  salesGasMoney: "0",
-  salesPph23: "",
-  isSalesPphManual: false,
 };
 
 export function DeliveryOrderCreateFormStore() {
   const router = useRouter();
   const hasHydrated = useDemoStore(selectHasHydrated);
   const orders = useDemoStore(selectDeliveryOrders);
+  const existingTransactions = useDemoStore(selectDeliveryOrderTransactions);
   const partners = useDemoStore(selectPartners);
-  const createDeliveryOrder = useDemoStore((state) => state.createDeliveryOrder);
-  const [form, setForm] = useState<DeliveryOrderFormState>(initialForm);
+  const createDeliveryOrderWithTransactions = useDemoStore(
+    (state) => state.createDeliveryOrderWithTransactions,
+  );
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [rows, setRows] = useState<TransactionRow[]>(() => [createEmptyRow(initialForm)]);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [isSalesOpen, setIsSalesOpen] = useState(false);
+  const [transactionErrors, setTransactionErrors] = useState<TransactionErrors>({});
   const [partnerSearch, setPartnerSearch] = useState("");
-  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [submitMode, setSubmitMode] = useState<SubmitMode | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
   const quickCreateTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingFocusRowId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!pendingFocusRowId.current) return;
+    document
+      .querySelector<HTMLInputElement>(
+        `[data-row-id="${pendingFocusRowId.current}"][data-transaction-field="transactionNumber"]`,
+      )
+      ?.focus();
+    pendingFocusRowId.current = null;
+  }, [rows.length]);
 
   const activePartners = useMemo(
     () => partners.filter((partner) => partner.isActive),
@@ -124,112 +138,131 @@ export function DeliveryOrderCreateFormStore() {
   );
   const filteredPartners = useMemo(() => {
     const query = partnerSearch.trim().toLocaleLowerCase("id-ID");
-
-    if (query === "") {
-      return activePartners;
-    }
-
-    return activePartners.filter((partner) =>
-      [partner.name, partner.code].some((value) =>
-        value.toLocaleLowerCase("id-ID").includes(query),
-      ),
-    );
+    return query === ""
+      ? activePartners
+      : activePartners.filter((partner) =>
+          [partner.name, partner.code].some((value) =>
+            value.toLocaleLowerCase("id-ID").includes(query),
+          ),
+        );
   }, [activePartners, partnerSearch]);
   const selectedPartner = partners.find((partner) => partner.id === form.partnerId);
-  const doNumberPreview = generateNextDeliveryOrderNumber(
-    orders,
-    form.loadingDate ? form.loadingDate.slice(0, 4) : new Date().getFullYear(),
-  );
-  const preview = getFinancialPreview(form);
-  const errorList = getErrorList(errors);
+  const doNumberPreview = generateNextDeliveryOrderNumber(orders);
+  const totals = calculateTotals(rows);
+  const errorList = getErrorList(errors, transactionErrors);
 
   if (!hasHydrated) {
     return <StoreLoading />;
   }
 
-  function updateField<Key extends keyof DeliveryOrderFormState>(
-    key: Key,
-    value: DeliveryOrderFormState[Key],
-  ) {
-    setForm((current) => {
-      const next = { ...current, [key]: value };
-
-      if (key === "truckPlate" && typeof value === "string") {
-        next.truckPlate = value.toUpperCase();
-      }
-
-      return next;
-    });
+  function updateField<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
+    setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
   }
 
-  function validateForm(): FieldErrors {
+  function updateTransactionField(
+    rowId: string,
+    field: TransactionField,
+    value: string,
+  ) {
+    setRows((current) =>
+      current.map((row) =>
+        row.clientId === rowId
+          ? {
+              ...row,
+              [field]: field === "truckPlate" ? value.toUpperCase() : value,
+            }
+          : row,
+      ),
+    );
+    setTransactionErrors((current) => ({
+      ...current,
+      [rowId]: { ...current[rowId], [field]: undefined },
+    }));
+  }
+
+  function addRow() {
+    const row = createEmptyRow(form);
+    pendingFocusRowId.current = row.clientId;
+    setRows((current) => [...current, row]);
+  }
+
+  function duplicateRow(row: TransactionRow) {
+    const nextRow: TransactionRow = {
+      ...row,
+      clientId: createRowId(),
+      transactionNumber: "",
+      loadingDate: "",
+      unloadingDate: "",
+    };
+    pendingFocusRowId.current = nextRow.clientId;
+    setRows((current) => [...current, nextRow]);
+  }
+
+  function removeRow(row: TransactionRow) {
+    if (rows.length === 1) {
+      setTransactionErrors((current) => ({
+        ...current,
+        [row.clientId]: { transactionNumber: "Minimal satu transaksi wajib diisi." },
+      }));
+      return;
+    }
+
+    if (isNonEmptyRow(row) && !window.confirm("Hapus transaksi yang sudah berisi data?")) {
+      return;
+    }
+
+    setRows((current) => current.filter((candidate) => candidate.clientId !== row.clientId));
+  }
+
+  function validateForm(): { parent: FieldErrors; transactions: TransactionErrors } {
     const nextErrors: FieldErrors = {};
-    const dateValidation = validateDeliveryOrderDates({
-      loadingDate: form.loadingDate,
-      unloadingDate: form.unloadingDate || undefined,
+    const nextTransactionErrors: TransactionErrors = {};
+    const existingNumbers = new Set(
+      existingTransactions.map((transaction) =>
+        transaction.transactionNumber.trim().toLocaleLowerCase("id-ID"),
+      ),
+    );
+    const seenNumbers = new Set<string>();
+
+    if (form.customerName.trim() === "") nextErrors.customerName = "Tambang wajib diisi.";
+    if (form.partnerId === "") nextErrors.partnerId = "Mitra wajib dipilih.";
+    if (form.originMine.trim() === "") nextErrors.originMine = "Lokasi asal wajib diisi.";
+    if (form.destinationPort.trim() === "") nextErrors.destinationPort = "Lokasi tujuan wajib diisi.";
+    validatePositiveNumber(form.salesRatePerTon, "Tarif jual per ton", "salesRatePerTon", nextErrors);
+    validateNonNegativeNumber(form.roadMoney, "Uang jalan", "roadMoney", nextErrors);
+    validateNonNegativeNumber(form.partnerRatePerTon, "Tarif mitra per ton", "partnerRatePerTon", nextErrors);
+    validateNonNegativeNumber(form.gasMoney, "Uang gas", "gasMoney", nextErrors);
+
+    rows.forEach((row) => {
+      const rowErrors: Partial<Record<TransactionField, string>> = {};
+      const numberKey = row.transactionNumber.trim().toLocaleLowerCase("id-ID");
+
+      if (row.transactionNumber.trim() === "") {
+        rowErrors.transactionNumber = "No SPB wajib diisi.";
+      } else if (seenNumbers.has(numberKey) || existingNumbers.has(numberKey)) {
+        rowErrors.transactionNumber = "No SPB sudah dipakai.";
+      }
+
+      seenNumbers.add(numberKey);
+      if (row.truckPlate.trim() === "") rowErrors.truckPlate = "No polisi wajib diisi.";
+      if (row.driverName.trim() === "") rowErrors.driverName = "Supir wajib diisi.";
+      if (row.loadingDate.trim() === "") rowErrors.loadingDate = "Tanggal muat wajib diisi.";
+      if (row.unloadingDate && row.loadingDate && row.unloadingDate < row.loadingDate) {
+        rowErrors.unloadingDate = "Tanggal bongkar tidak boleh sebelum muat.";
+      }
+      validatePositiveNumber(row.tonnage, "Tonase", "tonnage", rowErrors);
+      validatePositiveNumber(row.salesRatePerTon, "Tarif jual", "salesRatePerTon", rowErrors);
+      validateNonNegativeNumber(row.roadMoney, "Uang jalan", "roadMoney", rowErrors);
+      validateNonNegativeNumber(row.partnerRatePerTon, "Tarif mitra", "partnerRatePerTon", rowErrors);
+      validateNonNegativeNumber(row.gasMoney, "Uang gas", "gasMoney", rowErrors);
+
+      if (Object.keys(rowErrors).length > 0) {
+        nextTransactionErrors[row.clientId] = rowErrors;
+      }
     });
 
-    if (!dateValidation.valid) {
-      nextErrors.loadingDate = dateValidation.errors[0];
-    }
-
-    if (form.partnerId === "") nextErrors.partnerId = "Mitra wajib dipilih.";
-    if (form.customerName.trim() === "") nextErrors.customerName = "Tambang wajib diisi.";
-    if (form.originMine.trim() === "") nextErrors.originMine = "Tambang asal wajib diisi.";
-    if (form.destinationPort.trim() === "") nextErrors.destinationPort = "Pelabuhan tujuan wajib diisi.";
-    if (form.truckPlate.trim() === "") nextErrors.truckPlate = "Nomor polisi wajib diisi.";
-    if (form.driverName.trim() === "") nextErrors.driverName = "Nama pengemudi wajib diisi.";
-    validatePositiveNumber(form.tonnage, "Tonase", "tonnage", nextErrors);
-    validatePositiveNumber(form.transportPrice, "Harga angkut", "transportPrice", nextErrors);
-    validateNonNegativeNumber(form.roadMoney, "Uang jalan", "roadMoney", nextErrors);
-    validateNonNegativeNumber(form.gasMoney, "Uang pijak gas", "gasMoney", nextErrors);
-
-    if (form.isPartnerPphManual) {
-      validateNonNegativeNumber(form.partnerPph23, "PPh 23 Mitra", "partnerPph23", nextErrors);
-    }
-
-    if (form.sellingPrice.trim() !== "") {
-      validatePositiveNumber(form.sellingPrice, "Harga jual", "sellingPrice", nextErrors);
-    }
-
-    validateNonNegativeNumber(form.salesGasMoney, "Uang pijak gas penjualan", "salesGasMoney", nextErrors);
-
-    if (form.isSalesPphManual) {
-      validateNonNegativeNumber(form.salesPph23, "PPh 23 Penjualan", "salesPph23", nextErrors);
-    }
-
-    return nextErrors;
-  }
-
-  function focusFirstInvalid(nextErrors: FieldErrors) {
-    const firstField = Object.keys(nextErrors)[0] as FieldKey | undefined;
-
-    if (!firstField) return;
-
-    document.querySelector<HTMLElement>(`[data-field="${firstField}"]`)?.focus();
-  }
-
-  function buildInput(): CreateDeliveryOrderInput {
-    return {
-      id: `do-${Date.now()}`,
-      truckPlate: normalizeVehiclePlate(form.truckPlate),
-      driverName: form.driverName.trim(),
-      partnerName: selectedPartner?.name ?? "",
-      customerName: form.customerName.trim(),
-      originMine: form.originMine.trim(),
-      destinationPort: form.destinationPort.trim(),
-      loadingDate: form.loadingDate,
-      unloadingDate: form.unloadingDate || undefined,
-      tonnage: toNumber(form.tonnage),
-      transportPrice: toNumber(form.transportPrice),
-      roadMoney: toNumber(form.roadMoney),
-      gasMoney: toNumber(form.gasMoney),
-      partnerPph23: preview.partnerPph23,
-      sellingPrice: preview.hasSales ? toNumber(form.sellingPrice) : undefined,
-      salesGasMoney: preview.hasSales ? toNumber(form.salesGasMoney) : undefined,
-      salesPph23: preview.hasSales ? preview.salesPph23 : undefined,
-    };
+    return { parent: nextErrors, transactions: nextTransactionErrors };
   }
 
   function handleSubmit(mode: SubmitMode) {
@@ -237,35 +270,59 @@ export function DeliveryOrderCreateFormStore() {
 
     setSubmitAttempted(true);
     const nextErrors = validateForm();
-    setErrors(nextErrors);
+    setErrors(nextErrors.parent);
+    setTransactionErrors(nextErrors.transactions);
 
-    if (Object.keys(nextErrors).length > 0) {
-      focusFirstInvalid(nextErrors);
+    if (
+      Object.keys(nextErrors.parent).length > 0 ||
+      Object.keys(nextErrors.transactions).length > 0
+    ) {
+      focusFirstInvalid(nextErrors.parent, nextErrors.transactions);
       return;
     }
 
+    const input = buildInput({
+      form,
+      rows,
+      doNumber: doNumberPreview,
+      partnerName: selectedPartner?.name ?? "",
+    });
+
     setSubmitMode(mode);
-    const createdOrder = createDeliveryOrder(buildInput());
+    const result = createDeliveryOrderWithTransactions(input);
+
+    if (!result.ok) {
+      setSubmitMode(null);
+      setErrors((current) => ({
+        ...current,
+        customerName: result.reason === "duplicate-transaction-number" ? undefined : current.customerName,
+      }));
+      setSuccessMessage(`Gagal menyimpan: ${result.reason}`);
+      return;
+    }
 
     if (mode === "detail") {
-      startTransition(() => router.push(`/delivery-orders/${createdOrder.id}`));
+      startTransition(() => router.push(`/delivery-orders/${result.record.id}`));
       return;
     }
 
     setForm((current) => ({
       ...initialForm,
-      loadingDate: current.loadingDate,
       partnerId: current.partnerId,
       customerName: current.customerName,
       originMine: current.originMine,
       destinationPort: current.destinationPort,
+      salesRatePerTon: current.salesRatePerTon,
+      roadMoney: current.roadMoney,
+      partnerRatePerTon: current.partnerRatePerTon,
+      gasMoney: current.gasMoney,
     }));
+    setRows([createEmptyRow(form)]);
     setErrors({});
+    setTransactionErrors({});
     setSubmitAttempted(false);
     setSubmitMode(null);
-    setSuccessMessage(
-      `${createdOrder.doNumber} tersimpan. Nilai yang dipertahankan: tanggal muat, mitra, tambang, asal, dan tujuan.`,
-    );
+    setSuccessMessage(`${result.record.doNumber} tersimpan dengan ${rows.length} transaksi.`);
   }
 
   function handleQuickPartnerCreated(partner: Partner) {
@@ -283,7 +340,7 @@ export function DeliveryOrderCreateFormStore() {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight text-foreground">Buat Delivery Order</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Isi data operasional dan biaya awal. Record baru selalu dimulai sebagai Belum Dibayar ke Mitra.
+          Buat satu parent DO dengan satu atau lebih transaksi angkutan dalam satu halaman.
         </p>
       </div>
 
@@ -304,7 +361,7 @@ export function DeliveryOrderCreateFormStore() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
-          <MainInfoSection
+          <ParentInfoSection
             form={form}
             errors={errors}
             doNumberPreview={doNumberPreview}
@@ -316,13 +373,20 @@ export function DeliveryOrderCreateFormStore() {
             onOpenQuickCreate={() => setIsQuickCreateOpen(true)}
             quickCreateTriggerRef={quickCreateTriggerRef}
           />
-          <TripSection form={form} errors={errors} onFieldChange={updateField} />
-          <PurchaseSection form={form} errors={errors} preview={preview} onFieldChange={updateField} />
-          <SalesSection isOpen={isSalesOpen} onToggle={() => setIsSalesOpen((current) => !current)} form={form} errors={errors} preview={preview} onFieldChange={updateField} />
+          <DefaultRateSection form={form} errors={errors} onFieldChange={updateField} />
+          <TransactionSection
+            form={form}
+            rows={rows}
+            errors={transactionErrors}
+            onAddRow={addRow}
+            onDuplicateRow={duplicateRow}
+            onRemoveRow={removeRow}
+            onFieldChange={updateTransactionField}
+          />
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <SummaryCard preview={preview} />
+          <SummaryCard totals={totals} />
         </aside>
       </div>
 
@@ -349,7 +413,7 @@ export function DeliveryOrderCreateFormStore() {
   );
 }
 
-function MainInfoSection({
+function ParentInfoSection({
   form,
   errors,
   doNumberPreview,
@@ -361,27 +425,25 @@ function MainInfoSection({
   onOpenQuickCreate,
   quickCreateTriggerRef,
 }: {
-  form: DeliveryOrderFormState;
+  form: FormState;
   errors: FieldErrors;
   doNumberPreview: string;
   partnerSearch: string;
   partners: Partner[];
   selectedPartner?: Partner;
   onPartnerSearchChange: (value: string) => void;
-  onFieldChange: <Key extends keyof DeliveryOrderFormState>(key: Key, value: DeliveryOrderFormState[Key]) => void;
+  onFieldChange: <Key extends keyof FormState>(key: Key, value: FormState[Key]) => void;
   onOpenQuickCreate: () => void;
   quickCreateTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Informasi Utama</CardTitle>
-        <CardDescription>Nomor DO adalah preview. Store akan menentukan nomor akhir saat disimpan.</CardDescription>
+        <CardTitle>A. Informasi Delivery Order</CardTitle>
+        <CardDescription>Nomor DO otomatis dibuat saat data disimpan.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
-        <ReadOnlyField label="Nomor DO" value={doNumberPreview} />
-        <FormInput field="loadingDate" label="Tanggal Muat" required type="date" value={form.loadingDate} error={errors.loadingDate} onChange={(value) => onFieldChange("loadingDate", value)} />
-        <FormInput field="unloadingDate" label="Tanggal Bongkar" optional type="date" value={form.unloadingDate} error={errors.unloadingDate} onChange={(value) => onFieldChange("unloadingDate", value)} />
+        <ReadOnlyField label="No DO" value={doNumberPreview} />
         <FormInput field="customerName" label="Tambang" required value={form.customerName} error={errors.customerName} onChange={(value) => onFieldChange("customerName", value)} />
         <div className="md:col-span-2">
           <label className="block text-sm font-medium">
@@ -395,7 +457,7 @@ function MainInfoSection({
           <div className="mt-2 rounded-md border bg-background p-2">
             <div className="max-h-44 space-y-1 overflow-y-auto">
               {partners.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">Tidak ada mitra aktif yang cocok.</p> : partners.map((partner) => (
-                <button key={partner.id} type="button" onClick={() => { onFieldChange("partnerId", partner.id); onPartnerSearchChange(partner.name); }} className={cn("flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-muted", selectedPartner?.id === partner.id ? "bg-muted font-medium" : "")}> 
+                <button key={partner.id} type="button" onClick={() => { onFieldChange("partnerId", partner.id); onPartnerSearchChange(partner.name); }} className={cn("flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-muted", selectedPartner?.id === partner.id ? "bg-muted font-medium" : "")}>
                   <span>{partner.name}</span>
                   <span className="font-mono text-xs text-muted-foreground">{partner.code}</span>
                 </button>
@@ -407,94 +469,160 @@ function MainInfoSection({
             </div>
           </div>
         </div>
+        <FormInput field="originMine" label="Origin" required value={form.originMine} error={errors.originMine} onChange={(value) => onFieldChange("originMine", value)} />
+        <FormInput field="destinationPort" label="Destination" required value={form.destinationPort} error={errors.destinationPort} onChange={(value) => onFieldChange("destinationPort", value)} />
       </CardContent>
     </Card>
   );
 }
 
-function TripSection({ form, errors, onFieldChange }: SectionProps) {
-  return (
-    <Card>
-      <CardHeader><CardTitle>Perjalanan & Kendaraan</CardTitle></CardHeader>
-      <CardContent className="grid gap-4 md:grid-cols-2">
-        <FormInput field="originMine" label="Tambang Asal" required value={form.originMine} error={errors.originMine} onChange={(value) => onFieldChange("originMine", value)} />
-        <FormInput field="destinationPort" label="Pelabuhan Tujuan" required value={form.destinationPort} error={errors.destinationPort} onChange={(value) => onFieldChange("destinationPort", value)} />
-        <FormInput field="truckPlate" label="Nomor Polisi" required value={form.truckPlate} error={errors.truckPlate} onChange={(value) => onFieldChange("truckPlate", value)} />
-        <FormInput field="driverName" label="Nama Pengemudi" required value={form.driverName} error={errors.driverName} onChange={(value) => onFieldChange("driverName", value)} />
-        <FormInput field="tonnage" label="Tonase" required suffix="ton" inputMode="decimal" value={form.tonnage} error={errors.tonnage} onChange={(value) => onFieldChange("tonnage", value)} />
-      </CardContent>
-    </Card>
-  );
-}
-
-type SectionProps = {
-  form: DeliveryOrderFormState;
+function DefaultRateSection({ form, errors, onFieldChange }: {
+  form: FormState;
   errors: FieldErrors;
-  onFieldChange: <Key extends keyof DeliveryOrderFormState>(key: Key, value: DeliveryOrderFormState[Key]) => void;
-};
-
-function PurchaseSection({ form, errors, preview, onFieldChange }: SectionProps & { preview: FinancialPreview }) {
+  onFieldChange: <Key extends keyof FormState>(key: Key, value: FormState[Key]) => void;
+}) {
   return (
     <Card>
-      <CardHeader><CardTitle>Biaya Mitra</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>B. Default Tarif</CardTitle>
+        <CardDescription>Baris transaksi baru mewarisi nilai ini dan tetap bisa diedit.</CardDescription>
+      </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
-        <FormInput field="transportPrice" label="Harga Angkut" required inputMode="numeric" value={form.transportPrice} error={errors.transportPrice} onChange={(value) => onFieldChange("transportPrice", value)} />
-        <FormInput field="roadMoney" label="Uang Jalan" optional inputMode="numeric" value={form.roadMoney} error={errors.roadMoney} onChange={(value) => onFieldChange("roadMoney", value)} />
-        <FormInput field="gasMoney" label="Uang Pijak Gas" optional inputMode="numeric" value={form.gasMoney} error={errors.gasMoney} onChange={(value) => onFieldChange("gasMoney", value)} />
+        <FormInput field="salesRatePerTon" label="Tarif Jual / Ton" required inputMode="numeric" value={form.salesRatePerTon} error={errors.salesRatePerTon} onChange={(value) => onFieldChange("salesRatePerTon", value)} />
+        <FormInput field="roadMoney" label="Uang Jalan / Rit" required inputMode="numeric" value={form.roadMoney} error={errors.roadMoney} onChange={(value) => onFieldChange("roadMoney", value)} />
+        <FormInput field="partnerRatePerTon" label="Tarif Mitra / Ton" optional inputMode="numeric" value={form.partnerRatePerTon} error={errors.partnerRatePerTon} onChange={(value) => onFieldChange("partnerRatePerTon", value)} />
+        <FormInput field="gasMoney" label="Uang Gas" optional inputMode="numeric" value={form.gasMoney} error={errors.gasMoney} onChange={(value) => onFieldChange("gasMoney", value)} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function TransactionSection({
+  form,
+  rows,
+  errors,
+  onAddRow,
+  onDuplicateRow,
+  onRemoveRow,
+  onFieldChange,
+}: {
+  form: FormState;
+  rows: TransactionRow[];
+  errors: TransactionErrors;
+  onAddRow: () => void;
+  onDuplicateRow: (row: TransactionRow) => void;
+  onRemoveRow: (row: TransactionRow) => void;
+  onFieldChange: (rowId: string, field: TransactionField, value: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <FormInput field="partnerPph23" label="PPh 23 Mitra" optional inputMode="numeric" value={form.isPartnerPphManual ? form.partnerPph23 : String(preview.autoPartnerPph23)} error={errors.partnerPph23} onChange={(value) => { onFieldChange("partnerPph23", value); onFieldChange("isPartnerPphManual", true); }} />
-          <Button type="button" variant="link" size="sm" className="mt-1 px-0" onClick={() => { onFieldChange("isPartnerPphManual", false); onFieldChange("partnerPph23", ""); }}>Gunakan otomatis</Button>
+          <CardTitle>C. Transaksi Angkutan</CardTitle>
+          <CardDescription>Minimal satu transaksi. Gunakan duplikat untuk entri truck berulang.</CardDescription>
         </div>
-        <ReadOnlyField label="Total Pembelian" value={formatRupiah(preview.purchaseTotal)} />
+        <Button type="button" variant="outline" onClick={onAddRow}><Plus />Tambah Baris</Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {rows.map((row, index) => (
+          <TransactionCard
+            key={row.clientId}
+            index={index}
+            form={form}
+            row={row}
+            errors={errors[row.clientId] ?? {}}
+            onDuplicate={() => onDuplicateRow(row)}
+            onRemove={() => onRemoveRow(row)}
+            onFieldChange={(field, value) => onFieldChange(row.clientId, field, value)}
+          />
+        ))}
       </CardContent>
     </Card>
   );
 }
 
-function SalesSection({ isOpen, onToggle, form, errors, preview, onFieldChange }: SectionProps & { isOpen: boolean; onToggle: () => void; preview: FinancialPreview }) {
+function TransactionCard({
+  index,
+  form,
+  row,
+  errors,
+  onDuplicate,
+  onRemove,
+  onFieldChange,
+}: {
+  index: number;
+  form: FormState;
+  row: TransactionRow;
+  errors: Partial<Record<TransactionField, string>>;
+  onDuplicate: () => void;
+  onRemove: () => void;
+  onFieldChange: (field: TransactionField, value: string) => void;
+}) {
   return (
-    <Card>
-      <button type="button" onClick={onToggle} className="flex w-full items-center justify-between px-6 text-left">
-        <span><span className="block font-medium">Informasi Penjualan</span><span className="text-sm text-muted-foreground">Opsional, dapat dilengkapi nanti.</span></span>
-        <ChevronDown className={cn("size-4 transition-transform", isOpen ? "rotate-180" : "")} />
-      </button>
-      {isOpen ? (
-        <CardContent className="mt-4 grid gap-4 md:grid-cols-2">
-          <FormInput field="sellingPrice" label="Harga Jual" optional inputMode="numeric" value={form.sellingPrice} error={errors.sellingPrice} onChange={(value) => onFieldChange("sellingPrice", value)} />
-          <FormInput field="salesGasMoney" label="Uang Pijak Gas Penjualan" optional inputMode="numeric" value={form.salesGasMoney} error={errors.salesGasMoney} onChange={(value) => onFieldChange("salesGasMoney", value)} />
-          <div>
-            <FormInput field="salesPph23" label="PPh 23 Penjualan" optional inputMode="numeric" value={form.isSalesPphManual ? form.salesPph23 : String(preview.autoSalesPph23)} error={errors.salesPph23} onChange={(value) => { onFieldChange("salesPph23", value); onFieldChange("isSalesPphManual", true); }} />
-            <Button type="button" variant="link" size="sm" className="mt-1 px-0" onClick={() => { onFieldChange("isSalesPphManual", false); onFieldChange("salesPph23", ""); }}>Gunakan otomatis</Button>
-          </div>
-          <ReadOnlyField label="Total Penjualan" value={formatRupiah(preview.salesTotal)} />
-          <ReadOnlyField label="Estimasi Margin" value={formatRupiah(preview.estimatedMargin)} />
-        </CardContent>
-      ) : null}
-    </Card>
+    <section className="rounded-lg border bg-muted/20 p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">Transaksi #{index + 1}</p>
+          <p className="text-xs text-muted-foreground">Override ditandai jika berbeda dari default tarif.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onDuplicate}><Copy />Duplikat</Button>
+          <Button type="button" variant="outline" size="sm" onClick={onRemove}><Trash2 />Hapus</Button>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <TransactionInput rowId={row.clientId} field="transactionNumber" label="No SPB / Transaksi" required value={row.transactionNumber} error={errors.transactionNumber} onChange={(value) => onFieldChange("transactionNumber", value)} />
+        <TransactionInput rowId={row.clientId} field="truckPlate" label="No Polisi" required value={row.truckPlate} error={errors.truckPlate} onChange={(value) => onFieldChange("truckPlate", value)} />
+        <TransactionInput rowId={row.clientId} field="driverName" label="Supir" required value={row.driverName} error={errors.driverName} onChange={(value) => onFieldChange("driverName", value)} />
+        <TransactionInput rowId={row.clientId} field="loadingDate" label="Tanggal Muat" required type="date" value={row.loadingDate} error={errors.loadingDate} onChange={(value) => onFieldChange("loadingDate", value)} />
+        <TransactionInput rowId={row.clientId} field="unloadingDate" label="Tanggal Bongkar" optional type="date" value={row.unloadingDate} error={errors.unloadingDate} onChange={(value) => onFieldChange("unloadingDate", value)} />
+        <TransactionInput rowId={row.clientId} field="tonnage" label="Tonase" required suffix="ton" inputMode="decimal" value={row.tonnage} error={errors.tonnage} onChange={(value) => onFieldChange("tonnage", value)} />
+        <TransactionInput rowId={row.clientId} field="loadingLocation" label="Lokasi Muat" optional placeholder={form.originMine || "Default origin"} value={row.loadingLocation} error={errors.loadingLocation} onChange={(value) => onFieldChange("loadingLocation", value)} />
+        <TransactionInput rowId={row.clientId} field="unloadingLocation" label="Lokasi Bongkar" optional placeholder={form.destinationPort || "Default destination"} value={row.unloadingLocation} error={errors.unloadingLocation} onChange={(value) => onFieldChange("unloadingLocation", value)} />
+        <TransactionInput rowId={row.clientId} field="category" label="Kategori" optional value={row.category} error={errors.category} onChange={(value) => onFieldChange("category", value)} />
+        <TransactionInput rowId={row.clientId} field="salesRatePerTon" label="Tarif Jual / Ton" required inputMode="numeric" value={row.salesRatePerTon} error={errors.salesRatePerTon} isOverride={isOverride(row.salesRatePerTon, form.salesRatePerTon)} onChange={(value) => onFieldChange("salesRatePerTon", value)} />
+        <TransactionInput rowId={row.clientId} field="roadMoney" label="Uang Jalan" required inputMode="numeric" value={row.roadMoney} error={errors.roadMoney} isOverride={isOverride(row.roadMoney, form.roadMoney)} onChange={(value) => onFieldChange("roadMoney", value)} />
+        <TransactionInput rowId={row.clientId} field="partnerRatePerTon" label="Tarif Mitra / Ton" optional inputMode="numeric" value={row.partnerRatePerTon} error={errors.partnerRatePerTon} isOverride={isOverride(row.partnerRatePerTon, form.partnerRatePerTon)} onChange={(value) => onFieldChange("partnerRatePerTon", value)} />
+        <TransactionInput rowId={row.clientId} field="gasMoney" label="Uang Gas" optional inputMode="numeric" value={row.gasMoney} error={errors.gasMoney} isOverride={isOverride(row.gasMoney, form.gasMoney)} onChange={(value) => onFieldChange("gasMoney", value)} />
+      </div>
+    </section>
   );
 }
 
-function SummaryCard({ preview }: { preview: FinancialPreview }) {
+function SummaryCard({ totals }: { totals: Totals }) {
   return (
     <Card>
-      <CardHeader><CardTitle>Ringkasan</CardTitle><CardDescription>Record dimulai sebagai Belum Dibayar ke Mitra.</CardDescription></CardHeader>
+      <CardHeader>
+        <CardTitle>D. Ringkasan</CardTitle>
+        <CardDescription>Estimasi berdasarkan baris transaksi saat ini.</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-3">
-        <SummaryLine label="Total Pembelian" value={formatRupiah(preview.purchaseTotal)} />
-        {preview.hasSales ? <SummaryLine label="Total Penjualan" value={formatRupiah(preview.salesTotal)} /> : null}
-        {preview.hasSales ? <SummaryLine label="Estimasi Margin" value={formatRupiah(preview.estimatedMargin)} /> : null}
-        <SummaryLine label="Status Awal" value="Belum Dibayar ke Mitra" />
-        <p className="text-xs text-muted-foreground">Nomor DO, ID, total, dan status akhir saat simpan mengikuti store/domain helpers.</p>
+        <SummaryLine label="Jumlah Transaksi" value={`${totals.count}`} />
+        <SummaryLine label="Total Tonase" value={formatTonnage(totals.tonnage)} />
+        <SummaryLine label="Estimasi Tagihan Customer" value={formatRupiah(totals.customerAmount)} />
+        <SummaryLine label="Estimasi Pembayaran Mitra" value={formatRupiah(totals.partnerAmount)} />
+        <p className="text-xs text-muted-foreground">Estimasi customer = tonase x tarif jual + uang jalan. Estimasi mitra = tonase x tarif mitra + uang gas.</p>
       </CardContent>
     </Card>
   );
 }
 
-function FormInput({ field, label, value, onChange, error, required, optional, type = "text", inputMode, suffix }: { field: FieldKey; label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; optional?: boolean; type?: "text" | "date"; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; suffix?: string }) {
+function FormInput({ field, label, value, onChange, error, required, optional, inputMode }: { field: ParentField; label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; optional?: boolean; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"] }) {
   return (
     <label className="block text-sm font-medium">
       <span className="flex items-center gap-2">{label}{required ? <span className="text-destructive">*</span> : null}{optional ? <span className="text-xs font-normal text-muted-foreground">Opsional</span> : null}</span>
+      <input data-field={field} inputMode={inputMode} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} className={cn("mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", error ? "border-destructive focus:border-destructive" : "")} />
+      {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
+    </label>
+  );
+}
+
+function TransactionInput({ rowId, field, label, value, onChange, error, required, optional, type = "text", inputMode, suffix, placeholder, isOverride }: { rowId: string; field: TransactionField; label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; optional?: boolean; type?: "text" | "date"; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; suffix?: string; placeholder?: string; isOverride?: boolean }) {
+  return (
+    <label className="block text-sm font-medium">
+      <span className="flex items-center gap-2">{label}{required ? <span className="text-destructive">*</span> : null}{optional ? <span className="text-xs font-normal text-muted-foreground">Opsional</span> : null}{isOverride ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">Override</span> : null}</span>
       <span className="relative mt-2 block">
-        <input data-field={field} type={type} inputMode={inputMode} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} className={cn("h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", suffix ? "pr-12" : "", error ? "border-destructive focus:border-destructive" : "")} />
+        <input data-row-id={rowId} data-transaction-field={field} type={type} inputMode={inputMode} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} className={cn("h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", suffix ? "pr-12" : "", error ? "border-destructive focus:border-destructive" : "")} />
         {suffix ? <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{suffix}</span> : null}
       </span>
       {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
@@ -510,47 +638,128 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
   return <div className="flex items-center justify-between gap-4 border-b pb-2 last:border-0"><span className="text-sm text-muted-foreground">{label}</span><span className="text-right text-sm font-semibold">{value}</span></div>;
 }
 
-interface FinancialPreview {
-  autoPartnerPph23: number;
-  partnerPph23: number;
-  purchaseTotal: number;
-  hasSales: boolean;
-  autoSalesPph23: number;
-  salesPph23: number;
-  salesTotal: number;
-  estimatedMargin: number;
+interface Totals {
+  count: number;
+  tonnage: number;
+  customerAmount: number;
+  partnerAmount: number;
 }
 
-function getFinancialPreview(form: DeliveryOrderFormState): FinancialPreview {
-  const transportPrice = toNumber(form.transportPrice);
-  const roadMoney = toNumber(form.roadMoney);
-  const gasMoney = toNumber(form.gasMoney);
-  const sellingPrice = toNumber(form.sellingPrice);
-  const salesGasMoney = toNumber(form.salesGasMoney);
-  const autoPartnerPph23 = calculatePartnerPph23(transportPrice);
-  const partnerPph23 = form.isPartnerPphManual ? toNumber(form.partnerPph23) : autoPartnerPph23;
-  const purchaseTotal = calculatePurchaseTotal({ transportPrice, roadMoney, gasMoney, partnerPph23 });
-  const hasSales = form.sellingPrice.trim() !== "" || salesGasMoney > 0;
-  const autoSalesPph23 = calculateSalesPph23(sellingPrice);
-  const salesPph23 = form.isSalesPphManual ? toNumber(form.salesPph23) : autoSalesPph23;
-  const salesTotal = calculateSalesTotal({ sellingPrice, salesGasMoney, salesPph23 });
-  const estimatedMargin = calculateEstimatedGrossMargin({ purchaseTotal, salesTotal });
+function createRowId(): string {
+  return `trx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
-  return { autoPartnerPph23, partnerPph23, purchaseTotal, hasSales, autoSalesPph23, salesPph23, salesTotal, estimatedMargin };
+function createEmptyRow(form: FormState): TransactionRow {
+  return {
+    clientId: createRowId(),
+    transactionNumber: "",
+    truckPlate: "",
+    driverName: "",
+    loadingDate: today,
+    unloadingDate: "",
+    loadingLocation: "",
+    unloadingLocation: "",
+    tonnage: "",
+    category: "",
+    salesRatePerTon: form.salesRatePerTon,
+    roadMoney: form.roadMoney,
+    partnerRatePerTon: form.partnerRatePerTon,
+    gasMoney: form.gasMoney,
+  };
+}
+
+function calculateTotals(rows: TransactionRow[]): Totals {
+  return rows.reduce<Totals>((totals, row) => {
+    const tonnage = toNumber(row.tonnage);
+    return {
+      count: totals.count + 1,
+      tonnage: totals.tonnage + tonnage,
+      customerAmount: totals.customerAmount + tonnage * toNumber(row.salesRatePerTon) + toNumber(row.roadMoney),
+      partnerAmount: totals.partnerAmount + tonnage * toNumber(row.partnerRatePerTon) + toNumber(row.gasMoney),
+    };
+  }, { count: 0, tonnage: 0, customerAmount: 0, partnerAmount: 0 });
+}
+
+function buildInput({ form, rows, doNumber, partnerName }: { form: FormState; rows: TransactionRow[]; doNumber: string; partnerName: string; }): CreateDeliveryOrderWithTransactionsInput {
+  const parentId = `do-${Date.now()}`;
+  return {
+    parent: {
+      id: parentId,
+      doNumber,
+      customerName: form.customerName.trim(),
+      partnerName,
+      originMine: form.originMine.trim(),
+      destinationPort: form.destinationPort.trim(),
+      defaultRates: {
+        salesRatePerTon: toNumber(form.salesRatePerTon),
+        roadMoney: toNumber(form.roadMoney),
+        partnerRatePerTon: toNumber(form.partnerRatePerTon),
+        gasMoney: toNumber(form.gasMoney),
+      },
+    },
+    transactions: rows.map((row) => ({
+      id: `trx-${Date.now()}-${row.clientId}`,
+      deliveryOrderId: parentId,
+      transactionNumber: row.transactionNumber.trim(),
+      truckPlate: normalizeVehiclePlate(row.truckPlate),
+      driverName: row.driverName.trim(),
+      loadingDate: row.loadingDate,
+      unloadingDate: row.unloadingDate || undefined,
+      loadingLocation: row.loadingLocation.trim() || form.originMine.trim(),
+      unloadingLocation: row.unloadingLocation.trim() || form.destinationPort.trim(),
+      tonnage: toNumber(row.tonnage),
+      category: row.category.trim() || undefined,
+      salesRatePerTon: toNumber(row.salesRatePerTon),
+      roadMoney: toNumber(row.roadMoney),
+      partnerRatePerTon: toNumber(row.partnerRatePerTon),
+      gasMoney: toNumber(row.gasMoney),
+    })),
+  };
 }
 
 function toNumber(value: string): number {
   return Number(value.replace(/,/g, ".")) || 0;
 }
 
-function validatePositiveNumber(value: string, label: string, field: FieldKey, errors: FieldErrors) {
+function isOverride(value: string, defaultValue: string): boolean {
+  return value.trim() !== "" && value.trim() !== defaultValue.trim();
+}
+
+function isNonEmptyRow(row: TransactionRow): boolean {
+  return Object.entries(row).some(([key, value]) => key !== "clientId" && String(value).trim() !== "");
+}
+
+function validatePositiveNumber<T extends string>(value: string, label: string, field: T, errors: Partial<Record<T, string>>) {
   if (value.trim() === "" || toNumber(value) <= 0) errors[field] = `${label} harus lebih dari 0.`;
 }
 
-function validateNonNegativeNumber(value: string, label: string, field: FieldKey, errors: FieldErrors) {
+function validateNonNegativeNumber<T extends string>(value: string, label: string, field: T, errors: Partial<Record<T, string>>) {
   if (value.trim() !== "" && toNumber(value) < 0) errors[field] = `${label} tidak boleh negatif.`;
 }
 
-function getErrorList(errors: FieldErrors): string[] {
-  return Object.values(errors).filter(Boolean) as string[];
+function getErrorList(errors: FieldErrors, transactionErrors: TransactionErrors): string[] {
+  return [
+    ...Object.values(errors).filter(Boolean),
+    ...Object.entries(transactionErrors).flatMap(([rowId, rowErrors]) =>
+      Object.values(rowErrors).filter(Boolean).map((error) => `${rowId}: ${error}`),
+    ),
+  ] as string[];
+}
+
+function focusFirstInvalid(errors: FieldErrors, transactionErrors: TransactionErrors) {
+  const firstField = Object.keys(errors)[0];
+  if (firstField) {
+    document.querySelector<HTMLElement>(`[data-field="${firstField}"]`)?.focus();
+    return;
+  }
+
+  const firstTransaction = Object.entries(transactionErrors)[0];
+  if (!firstTransaction) return;
+  const [rowId, rowErrors] = firstTransaction;
+  const firstTransactionField = Object.keys(rowErrors)[0];
+  document
+    .querySelector<HTMLElement>(
+      `[data-row-id="${rowId}"][data-transaction-field="${firstTransactionField}"]`,
+    )
+    ?.focus();
 }

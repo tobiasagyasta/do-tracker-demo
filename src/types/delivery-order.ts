@@ -34,6 +34,11 @@ export interface CreateParentDeliveryOrderInput {
   defaultRates?: DeliveryOrderCommercialDefaults;
 }
 
+export interface CreateDeliveryOrderWithTransactionsInput {
+  parent: CreateParentDeliveryOrderInput;
+  transactions: CreateDeliveryOrderTransactionInput[];
+}
+
 export interface DeliveryOrder {
   id: string;
   doNumber: string;

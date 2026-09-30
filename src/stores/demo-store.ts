@@ -18,6 +18,7 @@ import { createPartnerFromInput, type CreatePartnerInput } from "@/lib/partners"
 import type {
   CreateDeliveryOrderInput,
   CreateDeliveryOrderTransactionInput,
+  CreateDeliveryOrderWithTransactionsInput,
   CreateParentDeliveryOrderInput,
   DeliveryOrder,
   DeliveryOrderTransaction,
@@ -53,6 +54,9 @@ export interface DemoStoreActions {
   createDeliveryOrder: (input: CreateDeliveryOrderInput) => DeliveryOrder;
   createParentDeliveryOrder: (
     input: CreateParentDeliveryOrderInput,
+  ) => StoreActionResult<DeliveryOrder>;
+  createDeliveryOrderWithTransactions: (
+    input: CreateDeliveryOrderWithTransactionsInput,
   ) => StoreActionResult<DeliveryOrder>;
   updateDeliveryOrder: (
     id: string,
@@ -381,6 +385,57 @@ export function createDemoStore() {
           const order = createLegacyCompatibleOrder(input);
           set((state) => ({
             deliveryOrders: [order, ...state.deliveryOrders],
+            lastCreatedDeliveryOrderId: order.id,
+          }));
+
+          return { ok: true, record: order };
+        },
+        createDeliveryOrderWithTransactions: (input) => {
+          const state = get();
+
+          if (state.deliveryOrders.some((order) => order.id === input.parent.id)) {
+            return { ok: false, reason: "duplicate-delivery-order-id" };
+          }
+
+          if (input.transactions.length === 0) {
+            return { ok: false, reason: "missing-transactions" };
+          }
+
+          const transactionNumbers = input.transactions.map((transaction) =>
+            transaction.transactionNumber.trim().toLocaleLowerCase("id-ID"),
+          );
+          const duplicateInForm = transactionNumbers.some(
+            (number, index) => number === "" || transactionNumbers.indexOf(number) !== index,
+          );
+
+          if (duplicateInForm) {
+            return { ok: false, reason: "duplicate-transaction-number" };
+          }
+
+          const existingTransactionNumbers = new Set(
+            state.deliveryOrderTransactions.map((transaction) =>
+              transaction.transactionNumber.trim().toLocaleLowerCase("id-ID"),
+            ),
+          );
+
+          if (transactionNumbers.some((number) => existingTransactionNumbers.has(number))) {
+            return { ok: false, reason: "duplicate-transaction-number" };
+          }
+
+          const order = createLegacyCompatibleOrder(input.parent);
+          const transactions = input.transactions.map((transaction) =>
+            createTransactionFromInput({
+              ...transaction,
+              deliveryOrderId: order.id,
+            }),
+          );
+
+          set((currentState) => ({
+            deliveryOrders: [order, ...currentState.deliveryOrders],
+            deliveryOrderTransactions: [
+              ...transactions,
+              ...currentState.deliveryOrderTransactions,
+            ],
             lastCreatedDeliveryOrderId: order.id,
           }));
 
