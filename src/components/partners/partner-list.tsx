@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { Plus, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -13,41 +14,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  filterPartners,
-  isValidEmail,
-  type CreatePartnerInput,
-} from "@/lib/partners";
+import { filterPartners } from "@/lib/partners";
 import { cn } from "@/lib/utils";
 import type { Partner } from "@/types/partner";
 
 interface PartnerListProps {
   partners: Partner[];
-  onCreatePartner: (input: CreatePartnerInput) => Partner;
 }
 
-const emptyForm: CreatePartnerInput = {
-  name: "",
-  companyType: "",
-  taxNumber: "",
-  phone: "",
-  email: "",
-  address: "",
-  bankName: "",
-  bankAccountNumber: "",
-  bankAccountHolder: "",
-  contactPerson: "",
-  contactPersonPhone: "",
-  isActive: true,
-};
-
-export function PartnerList({ partners, onCreatePartner }: PartnerListProps) {
+export function PartnerList({ partners }: PartnerListProps) {
   const [search, setSearch] = useState("");
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [form, setForm] = useState<CreatePartnerInput>(emptyForm);
-  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
-  const [toastMessage, setToastMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    if (window.sessionStorage.getItem("partner-created") !== "1") {
+      return "";
+    }
+
+    window.sessionStorage.removeItem("partner-created");
+    return "Mitra berhasil ditambahkan.";
+  });
 
   const filteredPartners = useMemo(
     () => filterPartners(partners, search),
@@ -55,43 +44,6 @@ export function PartnerList({ partners, onCreatePartner }: PartnerListProps) {
   );
   const activePartnerCount = partners.filter((partner) => partner.isActive).length;
   const inactivePartnerCount = partners.length - activePartnerCount;
-
-  function updateForm<Key extends keyof CreatePartnerInput>(
-    key: Key,
-    value: CreatePartnerInput[Key],
-  ) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function closeCreateDialog() {
-    setIsCreateOpen(false);
-    setForm(emptyForm);
-    setErrors({});
-  }
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const nextErrors: { name?: string; email?: string } = {};
-
-    if (form.name.trim() === "") {
-      nextErrors.name = "Nama Mitra wajib diisi.";
-    }
-
-    if (form.email.trim() !== "" && !isValidEmail(form.email.trim())) {
-      nextErrors.email = "Format email tidak valid.";
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      return;
-    }
-
-    onCreatePartner(form);
-
-    closeCreateDialog();
-    setToastMessage("Mitra berhasil ditambahkan.");
-  }
 
   return (
     <div className="space-y-5">
@@ -104,10 +56,10 @@ export function PartnerList({ partners, onCreatePartner }: PartnerListProps) {
             Kelola data mitra transportasi yang bekerja sama dengan perusahaan.
           </p>
         </div>
-        <Button type="button" onClick={() => setIsCreateOpen(true)} className="w-fit">
+        <Link href="/partners/new" className={cn(buttonVariants(), "w-fit")}>
           <Plus />
           Tambah Mitra
-        </Button>
+        </Link>
       </div>
 
       {toastMessage ? (
@@ -203,16 +155,6 @@ export function PartnerList({ partners, onCreatePartner }: PartnerListProps) {
           onClose={() => setSelectedPartner(null)}
         />
       ) : null}
-
-      {isCreateOpen ? (
-        <CreatePartnerDialog
-          form={form}
-          errors={errors}
-          onChange={updateForm}
-          onSubmit={handleSubmit}
-          onClose={closeCreateDialog}
-        />
-      ) : null}
     </div>
   );
 }
@@ -279,116 +221,6 @@ function PartnerDetailDialog({
   );
 }
 
-function CreatePartnerDialog({
-  form,
-  errors,
-  onChange,
-  onSubmit,
-  onClose,
-}: {
-  form: CreatePartnerInput;
-  errors: { name?: string; email?: string };
-  onChange: <Key extends keyof CreatePartnerInput>(
-    key: Key,
-    value: CreatePartnerInput[Key],
-  ) => void;
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onClose: () => void;
-}) {
-  return (
-    <ModalShell title="Tambah Mitra" onClose={onClose} maxWidth="max-w-4xl">
-      <form onSubmit={onSubmit} className="space-y-6">
-        <FormSection title="Informasi Dasar">
-          <FormInput
-            label="Nama Mitra*"
-            value={form.name}
-            onChange={(value) => onChange("name", value)}
-            error={errors.name}
-          />
-          <FormInput
-            label="Bentuk Perusahaan"
-            value={form.companyType}
-            onChange={(value) => onChange("companyType", value)}
-          />
-          <FormInput
-            label="NPWP"
-            value={form.taxNumber}
-            onChange={(value) => onChange("taxNumber", value)}
-          />
-          <FormInput
-            label="Alamat"
-            value={form.address}
-            onChange={(value) => onChange("address", value)}
-          />
-        </FormSection>
-
-        <FormSection title="Kontak">
-          <FormInput
-            label="Nomor Telepon"
-            value={form.phone}
-            onChange={(value) => onChange("phone", value)}
-          />
-          <FormInput
-            label="Email"
-            type="email"
-            value={form.email}
-            onChange={(value) => onChange("email", value)}
-            error={errors.email}
-          />
-          <FormInput
-            label="Nama PIC"
-            value={form.contactPerson}
-            onChange={(value) => onChange("contactPerson", value)}
-          />
-          <FormInput
-            label="Nomor PIC"
-            value={form.contactPersonPhone}
-            onChange={(value) => onChange("contactPersonPhone", value)}
-          />
-        </FormSection>
-
-        <FormSection title="Bank">
-          <FormInput
-            label="Nama Bank"
-            value={form.bankName}
-            onChange={(value) => onChange("bankName", value)}
-          />
-          <FormInput
-            label="Nomor Rekening"
-            value={form.bankAccountNumber}
-            onChange={(value) => onChange("bankAccountNumber", value)}
-          />
-          <FormInput
-            label="Atas Nama Rekening"
-            value={form.bankAccountHolder}
-            onChange={(value) => onChange("bankAccountHolder", value)}
-          />
-        </FormSection>
-
-        <div>
-          <p className="mb-2 text-sm font-medium">Status</p>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.isActive}
-              onChange={(event) => onChange("isActive", event.target.checked)}
-              className="size-4 rounded border"
-            />
-            Aktif
-          </label>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Batal
-          </Button>
-          <Button type="submit">Simpan Mitra</Button>
-        </div>
-      </form>
-    </ModalShell>
-  );
-}
-
 function ModalShell({
   title,
   children,
@@ -447,50 +279,5 @@ function DetailItem({ label, value }: { label: string; value?: string }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 font-medium text-foreground">{value ?? "-"}</p>
     </div>
-  );
-}
-
-function FormSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h4 className="mb-3 font-semibold">{title}</h4>
-      <div className="grid gap-4 md:grid-cols-2">{children}</div>
-    </section>
-  );
-}
-
-function FormInput({
-  label,
-  value,
-  onChange,
-  error,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  error?: string;
-  type?: "text" | "email";
-}) {
-  return (
-    <label className="block text-sm font-medium">
-      {label}
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30",
-          error ? "border-destructive focus:border-destructive" : "",
-        )}
-      />
-      {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
-    </label>
   );
 }
