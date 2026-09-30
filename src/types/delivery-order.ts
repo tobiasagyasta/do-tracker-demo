@@ -174,6 +174,36 @@ export interface InvoiceDraft {
   notes?: string;
 }
 
+export interface DeliveryOrderTransactionDraftRow {
+  clientId: string;
+  transactionNumber: string;
+  truckPlate: string;
+  driverName: string;
+  loadingDate: string;
+  unloadingDate: string;
+  loadingLocation: string;
+  unloadingLocation: string;
+  tonnage: string;
+  category: string;
+  salesRatePerTon: string;
+  roadMoney: string;
+  partnerRatePerTon: string;
+  gasMoney: string;
+}
+
+export interface DeliveryOrderFormDraft {
+  customerName: string;
+  partnerId: string;
+  originMine: string;
+  destinationPort: string;
+  salesRatePerTon: string;
+  roadMoney: string;
+  partnerRatePerTon: string;
+  gasMoney: string;
+  transactions: DeliveryOrderTransactionDraftRow[];
+  updatedAt: string;
+}
+
 export interface IssueSalesInvoiceInput extends InvoiceDraft {
   id: string;
 }

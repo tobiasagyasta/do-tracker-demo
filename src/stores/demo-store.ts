@@ -20,6 +20,7 @@ import type {
   CreateDeliveryOrderTransactionInput,
   CreateDeliveryOrderWithTransactionsInput,
   CreateParentDeliveryOrderInput,
+  DeliveryOrderFormDraft,
   DeliveryOrder,
   DeliveryOrderTransaction,
   InvoiceDraft,
@@ -44,7 +45,7 @@ export interface DemoStoreState {
   deliveryOrderTransactions: DeliveryOrderTransaction[];
   invoices: SalesInvoice[];
   partners: Partner[];
-  deliveryOrderDraft?: CreateDeliveryOrderInput;
+  deliveryOrderDraft?: DeliveryOrderFormDraft;
   invoiceDraft?: InvoiceDraft;
   lastCreatedDeliveryOrderId?: string;
   hasHydrated: boolean;
@@ -76,8 +77,9 @@ export interface DemoStoreActions {
   markInvoicePaid: (id: string, paymentDate: string) => StoreActionResult<SalesInvoice>;
   createPartner: (input: CreatePartnerInput) => Partner;
   updatePartner: (id: string, updates: Partial<Partner>) => UpdateResult<Partner>;
-  saveDeliveryOrderDraft: (draft: CreateDeliveryOrderInput) => void;
+  saveDeliveryOrderDraft: (draft: DeliveryOrderFormDraft) => void;
   clearDeliveryOrderDraft: () => void;
+  clearInvoiceDraft: () => void;
   resetDemoData: () => void;
   setHasHydrated: (hasHydrated: boolean) => void;
 }
@@ -209,24 +211,39 @@ function isPartnerArray(value: unknown): value is Partner[] {
   });
 }
 
-function isDeliveryOrderDraft(value: unknown): value is CreateDeliveryOrderInput {
+function isDeliveryOrderDraft(value: unknown): value is DeliveryOrderFormDraft {
   if (!isObject(value)) {
     return false;
   }
 
   return (
-    isString(value.id) &&
-    isString(value.truckPlate) &&
-    isString(value.driverName) &&
-    isString(value.partnerName) &&
     isString(value.customerName) &&
+    isString(value.partnerId) &&
     isString(value.originMine) &&
     isString(value.destinationPort) &&
-    isString(value.loadingDate) &&
-    isNumber(value.tonnage) &&
-    isNumber(value.transportPrice) &&
-    isNumber(value.roadMoney) &&
-    isNumber(value.gasMoney)
+    isString(value.salesRatePerTon) &&
+    isString(value.roadMoney) &&
+    isString(value.partnerRatePerTon) &&
+    isString(value.gasMoney) &&
+    isString(value.updatedAt) &&
+    Array.isArray(value.transactions) &&
+    value.transactions.every((row) =>
+      isObject(row) &&
+      isString(row.clientId) &&
+      isString(row.transactionNumber) &&
+      isString(row.truckPlate) &&
+      isString(row.driverName) &&
+      isString(row.loadingDate) &&
+      isString(row.unloadingDate) &&
+      isString(row.loadingLocation) &&
+      isString(row.unloadingLocation) &&
+      isString(row.tonnage) &&
+      isString(row.category) &&
+      isString(row.salesRatePerTon) &&
+      isString(row.roadMoney) &&
+      isString(row.partnerRatePerTon) &&
+      isString(row.gasMoney),
+    )
   );
 }
 
@@ -528,6 +545,7 @@ export function createDemoStore() {
           set({ invoiceDraft: draft });
           return { ok: true, record: draft };
         },
+        clearInvoiceDraft: () => set({ invoiceDraft: undefined }),
         issueInvoice: (input) => {
           const state = get();
 
@@ -672,7 +690,7 @@ export function createDemoStore() {
         },
         saveDeliveryOrderDraft: (draft) => set({ deliveryOrderDraft: draft }),
         clearDeliveryOrderDraft: () => set({ deliveryOrderDraft: undefined }),
-        resetDemoData: () => set(getSeedState()),
+        resetDemoData: () => set({ ...getSeedState(), hasHydrated: true }),
         setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       }),
       {
@@ -723,6 +741,12 @@ export const selectCreatePartner = (state: DemoStore) => state.createPartner;
 export const selectUpdateDeliveryOrder = (state: DemoStore) =>
   state.updateDeliveryOrder;
 export const selectResetDemoData = (state: DemoStore) => state.resetDemoData;
+export const selectDeliveryOrderDraft = (state: DemoStore) => state.deliveryOrderDraft;
+export const selectSaveDeliveryOrderDraft = (state: DemoStore) => state.saveDeliveryOrderDraft;
+export const selectClearDeliveryOrderDraft = (state: DemoStore) => state.clearDeliveryOrderDraft;
+export const selectInvoiceDraft = (state: DemoStore) => state.invoiceDraft;
+export const selectCreateInvoiceDraft = (state: DemoStore) => state.createInvoiceDraft;
+export const selectClearInvoiceDraft = (state: DemoStore) => state.clearInvoiceDraft;
 
 export const selectTransactionsForDeliveryOrder = (deliveryOrderId: string) =>
   (state: DemoStore) =>

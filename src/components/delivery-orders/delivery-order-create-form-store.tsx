@@ -24,9 +24,12 @@ import { formatRupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   selectDeliveryOrderTransactions,
+  selectDeliveryOrderDraft,
   selectDeliveryOrders,
   selectHasHydrated,
   selectPartners,
+  selectSaveDeliveryOrderDraft,
+  selectClearDeliveryOrderDraft,
 } from "@/stores/demo-store";
 import { useDemoStore } from "@/stores/demo-store-provider";
 import type { CreateDeliveryOrderWithTransactionsInput } from "@/types/delivery-order";
@@ -107,6 +110,9 @@ export function DeliveryOrderCreateFormStore() {
   const orders = useDemoStore(selectDeliveryOrders);
   const existingTransactions = useDemoStore(selectDeliveryOrderTransactions);
   const partners = useDemoStore(selectPartners);
+  const persistedDraft = useDemoStore(selectDeliveryOrderDraft);
+  const saveDeliveryOrderDraft = useDemoStore(selectSaveDeliveryOrderDraft);
+  const clearDeliveryOrderDraft = useDemoStore(selectClearDeliveryOrderDraft);
   const createDeliveryOrderWithTransactions = useDemoStore(
     (state) => state.createDeliveryOrderWithTransactions,
   );
@@ -118,9 +124,11 @@ export function DeliveryOrderCreateFormStore() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [submitMode, setSubmitMode] = useState<SubmitMode | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const [draftMessage, setDraftMessage] = useState("");
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
   const quickCreateTriggerRef = useRef<HTMLButtonElement | null>(null);
   const pendingFocusRowId = useRef<string | null>(null);
+  const skipNextDraftSave = useRef(false);
 
   useEffect(() => {
     if (!pendingFocusRowId.current) return;
@@ -147,9 +155,26 @@ export function DeliveryOrderCreateFormStore() {
         );
   }, [activePartners, partnerSearch]);
   const selectedPartner = partners.find((partner) => partner.id === form.partnerId);
+  const lastOrder = orders[0];
   const doNumberPreview = generateNextDeliveryOrderNumber(orders);
   const totals = calculateTotals(rows);
   const errorList = getErrorList(errors, transactionErrors);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+
+    if (skipNextDraftSave.current) {
+      skipNextDraftSave.current = false;
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      if (isEmptyDraft(form, rows)) return;
+      saveDeliveryOrderDraft({ ...form, transactions: rows, updatedAt: new Date().toISOString() });
+    }, 500);
+
+    return () => window.clearTimeout(handle);
+  }, [form, hasHydrated, rows, saveDeliveryOrderDraft]);
 
   if (!hasHydrated) {
     return <StoreLoading />;
@@ -185,6 +210,78 @@ export function DeliveryOrderCreateFormStore() {
     const row = createEmptyRow(form);
     pendingFocusRowId.current = row.clientId;
     setRows((current) => [...current, row]);
+  }
+
+  function restoreDraft() {
+    if (!persistedDraft) return;
+
+    const partnerStillExists = partners.some((partner) => partner.id === persistedDraft.partnerId);
+    setForm({
+      customerName: persistedDraft.customerName,
+      partnerId: partnerStillExists ? persistedDraft.partnerId : "",
+      originMine: persistedDraft.originMine,
+      destinationPort: persistedDraft.destinationPort,
+      salesRatePerTon: persistedDraft.salesRatePerTon,
+      roadMoney: persistedDraft.roadMoney,
+      partnerRatePerTon: persistedDraft.partnerRatePerTon,
+      gasMoney: persistedDraft.gasMoney,
+    });
+    setRows(persistedDraft.transactions.length > 0 ? persistedDraft.transactions : [createEmptyRow(persistedDraft)]);
+    setPartnerSearch(partnerStillExists ? partners.find((partner) => partner.id === persistedDraft.partnerId)?.name ?? "" : "");
+    setErrors(partnerStillExists ? {} : { partnerId: "Mitra di draft sudah tidak tersedia. Pilih mitra baru." });
+    setDraftMessage(partnerStillExists ? "Draft dipulihkan." : "Draft dipulihkan, tetapi mitra lama tidak tersedia.");
+  }
+
+  function discardDraft() {
+    skipNextDraftSave.current = true;
+    clearDeliveryOrderDraft();
+    setDraftMessage("Draft dihapus.");
+  }
+
+  function useLastOrderTemplate() {
+    if (!lastOrder) return;
+    const nextForm: FormState = {
+      customerName: lastOrder.customerName,
+      partnerId: partners.find((partner) => partner.name === lastOrder.partnerName)?.id ?? "",
+      originMine: lastOrder.originMine,
+      destinationPort: lastOrder.destinationPort,
+      salesRatePerTon: String(lastOrder.defaultRates?.salesRatePerTon ?? ""),
+      roadMoney: String(lastOrder.defaultRates?.roadMoney ?? 0),
+      partnerRatePerTon: String(lastOrder.defaultRates?.partnerRatePerTon ?? ""),
+      gasMoney: String(lastOrder.defaultRates?.gasMoney ?? 0),
+    };
+    setForm(nextForm);
+    setPartnerSearch(partners.find((partner) => partner.id === nextForm.partnerId)?.name ?? "");
+    setRows([createEmptyRow(nextForm)]);
+    setDraftMessage("Template DO terakhir digunakan. Nilai yang dipertahankan: tambang, mitra, origin, destination, dan default tarif.");
+  }
+
+  function duplicateLastTransactionTemplate() {
+    if (!lastOrder) return;
+    const lastTransaction = existingTransactions.find(
+      (transaction) => transaction.deliveryOrderId === lastOrder.id,
+    );
+    if (!lastTransaction) return;
+
+    const row: TransactionRow = {
+      clientId: createRowId(),
+      transactionNumber: "",
+      truckPlate: "",
+      driverName: "",
+      loadingDate: "",
+      unloadingDate: "",
+      loadingLocation: lastTransaction.loadingLocation,
+      unloadingLocation: lastTransaction.unloadingLocation,
+      tonnage: "",
+      category: lastTransaction.category ?? "",
+      salesRatePerTon: String(lastTransaction.salesRatePerTon),
+      roadMoney: String(lastTransaction.roadMoney),
+      partnerRatePerTon: String(lastTransaction.partnerRatePerTon),
+      gasMoney: String(lastTransaction.gasMoney),
+    };
+
+    setRows((current) => [...current, row]);
+    setDraftMessage("Satu template transaksi ditambahkan. Nilai unik seperti SPB, truck, supir, tanggal, tonase, invoice, dan pembayaran dikosongkan.");
   }
 
   function duplicateRow(row: TransactionRow) {
@@ -302,10 +399,12 @@ export function DeliveryOrderCreateFormStore() {
     }
 
     if (mode === "detail") {
+      clearDeliveryOrderDraft();
       startTransition(() => router.push(`/delivery-orders/${result.record.id}`));
       return;
     }
 
+    clearDeliveryOrderDraft();
     setForm((current) => ({
       ...initialForm,
       partnerId: current.partnerId,
@@ -347,6 +446,34 @@ export function DeliveryOrderCreateFormStore() {
       {successMessage ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
           {successMessage}
+        </div>
+      ) : null}
+
+      {persistedDraft ? (
+        <div className="rounded-md border bg-card px-4 py-3 text-sm shadow-sm">
+          <p className="font-medium">Draft Delivery Order tersedia</p>
+          <p className="mt-1 text-muted-foreground">Draft terakhir disimpan {formatDraftTime(persistedDraft.updatedAt)}. Draft tidak dipulihkan otomatis.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={restoreDraft}>Lanjutkan Draft</Button>
+            <Button type="button" size="sm" variant="outline" onClick={discardDraft}>Hapus Draft</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {lastOrder ? (
+        <div className="rounded-md border bg-muted/20 px-4 py-3 text-sm">
+          <p className="font-medium">Repeat entry dari DO terakhir</p>
+          <p className="mt-1 text-muted-foreground">Retain: tambang, mitra, origin, destination, dan default tarif. Tidak menyalin SPB, tanggal, transaksi, invoice, atau pembayaran.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={useLastOrderTemplate}>Gunakan Template DO Terakhir</Button>
+            <Button type="button" size="sm" variant="outline" onClick={duplicateLastTransactionTemplate}>Duplikat Satu Baris Transaksi</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {draftMessage ? (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+          {draftMessage}
         </div>
       ) : null}
 
@@ -727,6 +854,21 @@ function isOverride(value: string, defaultValue: string): boolean {
 
 function isNonEmptyRow(row: TransactionRow): boolean {
   return Object.entries(row).some(([key, value]) => key !== "clientId" && String(value).trim() !== "");
+}
+
+function isEmptyDraft(form: FormState, rows: TransactionRow[]): boolean {
+  const parentIsEmpty = Object.entries(form).every(([key, value]) => {
+    if (key === "roadMoney" || key === "gasMoney") return value === "0" || value === "";
+    return String(value).trim() === "";
+  });
+
+  return parentIsEmpty && rows.every((row) => !isNonEmptyRow(row));
+}
+
+function formatDraftTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "sebelumnya";
+  return date.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function validatePositiveNumber<T extends string>(value: string, label: string, field: T, errors: Partial<Record<T, string>>) {
