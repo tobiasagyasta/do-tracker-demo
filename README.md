@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DO Tracker Demo
+
+Frontend-only MVP untuk demonstrasi alur operasional Delivery Order, Mitra, invoice penjualan, bukti pembayaran Mitra, dan laporan transaksi.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka `http://localhost:3000` dan gunakan sidebar untuk mengakses modul demo.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## MVP Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Dashboard ringkas untuk status DO, outstanding, penjualan, dan margin operasional.
+- DO Tracker untuk mencari, memfilter, dan membuka detail Delivery Order.
+- Mitra Management Demo untuk master data Mitra berbasis state lokal.
+- DO Lifecycle untuk simulasi pembayaran Mitra, pembuatan invoice, dan pembayaran Tambang.
+- Invoice Maker dengan auto-fill data dari Delivery Order.
+- Invoice PDF berbasis `jsPDF` dan `jspdf-autotable`.
+- Bukti Pembayaran Mitra dengan preview dan download PDF.
+- Reports / CSV Export untuk laporan DO, pembelian dibayar, dan penjualan dibayar.
 
-## Learn More
+## Demo Limitations
 
-To learn more about Next.js, take a look at the following resources:
+- Menggunakan static/mock data.
+- Tidak ada backend persistence.
+- Tidak ada authentication atau role permission.
+- Tidak ada formal accounting engine.
+- Tidak ada pembayaran nyata atau rekonsiliasi bank.
+- Tidak mendukung invoice gabungan multi-DO.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Future Backend Integration
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Integrasi backend NestJS.
+- Database PostgreSQL.
+- Authentication dan authorization.
+- Model data normalized untuk Partner, Customer/Tambang, Delivery Order, Invoice, dan Payment.
+- Modul accounting setelah discovery SOP finance, termasuk jurnal, ledger, dan laporan keuangan formal.
