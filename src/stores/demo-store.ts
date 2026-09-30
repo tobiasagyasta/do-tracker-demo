@@ -584,6 +584,7 @@ export function createDemoStore() {
             status: "ISSUED",
             pph23Rate: input.pph23Rate,
             rentalDepositDeduction: input.rentalDepositDeduction,
+            notes: input.notes,
             lines,
           };
           const transactionIds = new Set(input.transactionIds);

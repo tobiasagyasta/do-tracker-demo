@@ -158,6 +158,7 @@ export interface SalesInvoice {
   pph23Rate: number;
   rentalDepositDeduction: number;
   deductions?: number;
+  notes?: string;
   lines: InvoiceTransactionLine[];
 }
 
@@ -170,6 +171,7 @@ export interface InvoiceDraft {
   transactionIds: string[];
   pph23Rate: number;
   rentalDepositDeduction: number;
+  notes?: string;
 }
 
 export interface IssueSalesInvoiceInput extends InvoiceDraft {

@@ -23,57 +23,73 @@ import {
 } from "@/components/ui/table";
 import { formatTonnage } from "@/lib/delivery-orders";
 import { formatDateID, formatRupiah } from "@/lib/format";
-import { getInvoicePaymentStatus } from "@/lib/invoice";
+import { calculateSalesInvoiceTotals } from "@/lib/invoice";
 import { cn } from "@/lib/utils";
-import type { DeliveryOrder } from "@/types/delivery-order";
+import type { DeliveryOrderTransaction, SalesInvoice } from "@/types/delivery-order";
 
 interface InvoiceListProps {
-  orders: DeliveryOrder[];
+  invoices: SalesInvoice[];
+  eligibleTransactions: DeliveryOrderTransaction[];
 }
 
-type InvoiceFilter = "ALL" | "READY" | "WAITING" | "PAID";
+type InvoiceFilter = "ALL" | "ISSUED" | "PAID" | "CANCELLED";
 
-export function InvoiceList({ orders }: InvoiceListProps) {
+export function InvoiceList({ invoices, eligibleTransactions }: InvoiceListProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InvoiceFilter>("ALL");
 
-  const filteredOrders = useMemo(() => {
+  const filteredInvoices = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("id-ID");
 
-    return orders.filter((order) => {
+    return invoices.filter((invoice) => {
       const matchesSearch =
         query === "" ||
-        [order.salesInvoiceNumber, order.doNumber, order.customerName].some((value) =>
-          value?.toLocaleLowerCase("id-ID").includes(query),
+        [invoice.invoiceNumber, invoice.customerName, invoice.purchaseOrderReference].some(
+          (value) => value?.toLocaleLowerCase("id-ID").includes(query),
         );
-      const matchesFilter =
-        filter === "ALL" ||
-        (filter === "READY" && order.status === "PARTNER_PAID_NOT_INVOICED") ||
-        (filter === "WAITING" && order.status === "WAITING_CUSTOMER_PAYMENT") ||
-        (filter === "PAID" && order.status === "COMPLETED");
+      const matchesFilter = filter === "ALL" || invoice.status === filter;
 
       return matchesSearch && matchesFilter;
     });
-  }, [orders, search, filter]);
-
-  const readyOrders = filteredOrders.filter(
-    (order) => order.status === "PARTNER_PAID_NOT_INVOICED",
-  );
-  const invoicedOrders = filteredOrders.filter(
-    (order) =>
-      order.status === "WAITING_CUSTOMER_PAYMENT" || order.status === "COMPLETED",
-  );
+  }, [invoices, search, filter]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-          Invoice
-        </h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Kelola invoice penjualan yang dibuat berdasarkan Delivery Order.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Invoice</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            Kelola invoice penjualan sebagai record independen lintas Delivery Order.
+          </p>
+        </div>
+        <Link href="/invoices/new" className={cn(buttonVariants(), "shrink-0")}>
+          <FilePlus2 />
+          Buat Invoice
+        </Link>
       </div>
+
+      <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_280px]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Eligibility Summary</CardTitle>
+            <CardDescription>Transaksi siap invoice yang sudah dibayar ke mitra dan belum ditagih.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-semibold">{eligibleTransactions.length}</p>
+            <p className="mt-1 text-sm text-muted-foreground">transaksi siap ditagih</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Invoice</CardTitle>
+            <CardDescription>Semua status tersimpan.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-semibold">{invoices.length}</p>
+            <p className="mt-1 text-sm text-muted-foreground">record invoice</p>
+          </CardContent>
+        </Card>
+      </section>
 
       <section className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
@@ -84,7 +100,7 @@ export function InvoiceList({ orders }: InvoiceListProps) {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Cari No Invoice, No DO, atau Tambang..."
+                placeholder="Cari No Invoice, customer, atau PO..."
                 className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/30"
               />
             </span>
@@ -97,9 +113,9 @@ export function InvoiceList({ orders }: InvoiceListProps) {
               className="mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30"
             >
               <option value="ALL">Semua</option>
-              <option value="READY">Siap Ditagih</option>
-              <option value="WAITING">Menunggu Pembayaran</option>
-              <option value="PAID">Sudah Dibayar</option>
+              <option value="ISSUED">Issued</option>
+              <option value="PAID">Paid</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </label>
         </div>
@@ -107,95 +123,54 @@ export function InvoiceList({ orders }: InvoiceListProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>DO Siap Ditagih</CardTitle>
-          <CardDescription>
-            Delivery Order yang mitranya sudah dibayar dan siap dibuatkan invoice.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>No DO</TableHead>
-                <TableHead>Tambang</TableHead>
-                <TableHead>Mitra</TableHead>
-                <TableHead>Tanggal Muat</TableHead>
-                <TableHead className="text-right">Tonase</TableHead>
-                <TableHead className="text-right">Total Pembelian</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {readyOrders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                    Tidak ada DO yang siap ditagih.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                readyOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-semibold">{order.doNumber}</TableCell>
-                    <TableCell className="min-w-52">{order.customerName}</TableCell>
-                    <TableCell className="min-w-52">{order.partnerName}</TableCell>
-                    <TableCell>{formatDateID(order.loadingDate)}</TableCell>
-                    <TableCell className="text-right">{formatTonnage(order.tonnage)}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(order.purchaseTotal)}</TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/invoices/${order.id}`} className={cn(buttonVariants({ size: "sm" }))}>
-                        <FilePlus2 />
-                        Buat Invoice
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Invoice Dibuat</CardTitle>
-          <CardDescription>Invoice yang sedang menunggu pembayaran atau sudah dibayar.</CardDescription>
+          <CardDescription>Invoice tersimpan sebagai entitas independen.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>No Invoice</TableHead>
-                <TableHead>No DO</TableHead>
-                <TableHead>Tambang</TableHead>
-                <TableHead>Tanggal Invoice</TableHead>
-                <TableHead className="text-right">Total Invoice</TableHead>
-                <TableHead>Status Pembayaran</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Tanggal</TableHead>
+                <TableHead className="text-right">DO</TableHead>
+                <TableHead className="text-right">Transaksi</TableHead>
+                <TableHead className="text-right">Tonase</TableHead>
+                <TableHead className="text-right">Grand Total</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoicedOrders.length === 0 ? (
+              {filteredInvoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                    Belum ada invoice yang sesuai dengan pencarian.
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    Belum ada invoice yang sesuai.
                   </TableCell>
                 </TableRow>
               ) : (
-                invoicedOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-semibold">{order.salesInvoiceNumber ?? "-"}</TableCell>
-                    <TableCell>{order.doNumber}</TableCell>
-                    <TableCell className="min-w-52">{order.customerName}</TableCell>
-                    <TableCell>{formatDateID(order.salesInvoiceDate)}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(order.salesTotal)}</TableCell>
-                    <TableCell><InvoicePaymentBadge order={order} /></TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/invoices/${order.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                        Lihat Invoice
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredInvoices.map((invoice) => {
+                  const totals = calculateSalesInvoiceTotals(invoice);
+                  const totalTonnage = invoice.lines.reduce((sum, line) => sum + line.tonnage, 0);
+
+                  return (
+                    <TableRow key={invoice.id}>
+                      <TableCell className="font-semibold">{invoice.invoiceNumber}</TableCell>
+                      <TableCell className="min-w-52">{invoice.customerName}</TableCell>
+                      <TableCell>{formatDateID(invoice.invoiceDate)}</TableCell>
+                      <TableCell className="text-right">{totals.groups.length}</TableCell>
+                      <TableCell className="text-right">{invoice.transactionIds.length}</TableCell>
+                      <TableCell className="text-right">{formatTonnage(totalTonnage)}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(totals.grandTotal)}</TableCell>
+                      <TableCell><InvoiceStatusBadge invoice={invoice} /></TableCell>
+                      <TableCell className="text-right">
+                        <Link href={`/invoices/${invoice.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                          Lihat Invoice
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -205,14 +180,14 @@ export function InvoiceList({ orders }: InvoiceListProps) {
   );
 }
 
-function InvoicePaymentBadge({ order }: { order: DeliveryOrder }) {
-  return order.customerPaidAt ? (
-    <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
-      {getInvoicePaymentStatus(order)}
-    </Badge>
-  ) : (
-    <Badge variant="outline" className="text-muted-foreground">
-      {getInvoicePaymentStatus(order)}
-    </Badge>
-  );
+function InvoiceStatusBadge({ invoice }: { invoice: SalesInvoice }) {
+  if (invoice.status === "PAID") {
+    return <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">Paid</Badge>;
+  }
+
+  if (invoice.status === "CANCELLED") {
+    return <Badge variant="outline" className="text-destructive">Cancelled</Badge>;
+  }
+
+  return <Badge variant="outline" className="text-muted-foreground">Issued</Badge>;
 }
