@@ -7,8 +7,17 @@ import {
   createDeliveryOrderFromInput,
   generateNextDeliveryOrderNumber,
 } from "@/lib/delivery-order-creation";
+import {
+  legacyDeliveryOrderToSalesInvoice,
+  legacyDeliveryOrderToTransaction,
+} from "@/lib/invoice";
 import { createPartnerFromInput, type CreatePartnerInput } from "@/lib/partners";
-import type { CreateDeliveryOrderInput, DeliveryOrder } from "@/types/delivery-order";
+import type {
+  CreateDeliveryOrderInput,
+  DeliveryOrder,
+  DeliveryOrderTransaction,
+  SalesInvoice,
+} from "@/types/delivery-order";
 import type { Partner } from "@/types/partner";
 
 export const DEMO_STORE_STORAGE_KEY = "do-tracker-demo-store";
@@ -20,6 +29,8 @@ export type UpdateResult<T> =
 
 export interface DemoStoreState {
   deliveryOrders: DeliveryOrder[];
+  deliveryOrderTransactions: DeliveryOrderTransaction[];
+  salesInvoices: SalesInvoice[];
   partners: Partner[];
   deliveryOrderDraft?: CreateDeliveryOrderInput;
   lastCreatedDeliveryOrderId?: string;
@@ -46,6 +57,17 @@ function cloneSeedDeliveryOrders(): DeliveryOrder[] {
   return mockDeliveryOrders.map((order) => ({ ...order }));
 }
 
+function cloneSeedDeliveryOrderTransactions(): DeliveryOrderTransaction[] {
+  return cloneSeedDeliveryOrders().map(legacyDeliveryOrderToTransaction);
+}
+
+function cloneSeedSalesInvoices(): SalesInvoice[] {
+  return cloneSeedDeliveryOrders().flatMap((order) => {
+    const invoice = legacyDeliveryOrderToSalesInvoice(order);
+    return invoice ? [invoice] : [];
+  });
+}
+
 function cloneSeedPartners(): Partner[] {
   return mockPartners.map((partner) => ({ ...partner }));
 }
@@ -53,6 +75,8 @@ function cloneSeedPartners(): Partner[] {
 function getSeedState(): DemoStoreState {
   return {
     deliveryOrders: cloneSeedDeliveryOrders(),
+    deliveryOrderTransactions: cloneSeedDeliveryOrderTransactions(),
+    salesInvoices: cloneSeedSalesInvoices(),
     partners: cloneSeedPartners(),
     deliveryOrderDraft: undefined,
     lastCreatedDeliveryOrderId: undefined,
@@ -71,6 +95,39 @@ function isDeliveryOrderArray(value: unknown): value is DeliveryOrder[] {
       typeof candidate.id === "string" &&
       typeof candidate.doNumber === "string" &&
       typeof candidate.status === "string"
+    );
+  });
+}
+
+function isDeliveryOrderTransactionArray(
+  value: unknown,
+): value is DeliveryOrderTransaction[] {
+  return Array.isArray(value) && value.every((transaction) => {
+    if (!transaction || typeof transaction !== "object") {
+      return false;
+    }
+
+    const candidate = transaction as Partial<DeliveryOrderTransaction>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.deliveryOrderId === "string" &&
+      typeof candidate.transactionNumber === "string"
+    );
+  });
+}
+
+function isSalesInvoiceArray(value: unknown): value is SalesInvoice[] {
+  return Array.isArray(value) && value.every((invoice) => {
+    if (!invoice || typeof invoice !== "object") {
+      return false;
+    }
+
+    const candidate = invoice as Partial<SalesInvoice>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.invoiceNumber === "string" &&
+      Array.isArray(candidate.transactionIds) &&
+      Array.isArray(candidate.lines)
     );
   });
 }
@@ -97,11 +154,23 @@ function normalizePersistedState(persistedState: unknown): Partial<DemoStoreStat
 
   const candidate = persistedState as Partial<DemoStoreState>;
   const seed = getSeedState();
+  const deliveryOrders = isDeliveryOrderArray(candidate.deliveryOrders)
+    ? candidate.deliveryOrders
+    : seed.deliveryOrders;
 
   return {
-    deliveryOrders: isDeliveryOrderArray(candidate.deliveryOrders)
-      ? candidate.deliveryOrders
-      : seed.deliveryOrders,
+    deliveryOrders,
+    deliveryOrderTransactions: isDeliveryOrderTransactionArray(
+      candidate.deliveryOrderTransactions,
+    )
+      ? candidate.deliveryOrderTransactions
+      : deliveryOrders.map(legacyDeliveryOrderToTransaction),
+    salesInvoices: isSalesInvoiceArray(candidate.salesInvoices)
+      ? candidate.salesInvoices
+      : deliveryOrders.flatMap((order) => {
+          const invoice = legacyDeliveryOrderToSalesInvoice(order);
+          return invoice ? [invoice] : [];
+        }),
     partners: isPartnerArray(candidate.partners) ? candidate.partners : seed.partners,
     deliveryOrderDraft: candidate.deliveryOrderDraft,
     lastCreatedDeliveryOrderId:
@@ -127,6 +196,10 @@ export function createDemoStore() {
 
           set((state) => ({
             deliveryOrders: [order, ...state.deliveryOrders],
+            deliveryOrderTransactions: [
+              legacyDeliveryOrderToTransaction(order),
+              ...state.deliveryOrderTransactions,
+            ],
             lastCreatedDeliveryOrderId: order.id,
           }));
 
@@ -140,10 +213,25 @@ export function createDemoStore() {
           }
 
           const updated = { ...existing, ...updates };
+          const updatedTransaction = legacyDeliveryOrderToTransaction(updated);
+          const updatedInvoice = legacyDeliveryOrderToSalesInvoice(updated);
+
           set((state) => ({
             deliveryOrders: state.deliveryOrders.map((order) =>
               order.id === id ? updated : order,
             ),
+            deliveryOrderTransactions: state.deliveryOrderTransactions.map(
+              (transaction) =>
+                transaction.id === id ? updatedTransaction : transaction,
+            ),
+            salesInvoices: updatedInvoice
+              ? [
+                  updatedInvoice,
+                  ...state.salesInvoices.filter(
+                    (invoice) => invoice.id !== updatedInvoice.id,
+                  ),
+                ]
+              : state.salesInvoices.filter((invoice) => invoice.id !== existing.salesInvoiceNumber),
           }));
 
           return { ok: true, record: updated };
@@ -183,6 +271,8 @@ export function createDemoStore() {
         skipHydration: true,
         partialize: (state) => ({
           deliveryOrders: state.deliveryOrders,
+          deliveryOrderTransactions: state.deliveryOrderTransactions,
+          salesInvoices: state.salesInvoices,
           partners: state.partners,
           deliveryOrderDraft: state.deliveryOrderDraft,
           lastCreatedDeliveryOrderId: state.lastCreatedDeliveryOrderId,
