@@ -59,6 +59,10 @@ type TransactionField =
   | "roadMoney"
   | "partnerRatePerTon"
   | "gasMoney";
+type DefaultRateField = Extract<
+  ParentField,
+  "salesRatePerTon" | "roadMoney" | "partnerRatePerTon" | "gasMoney"
+>;
 
 interface FormState {
   customerName: string;
@@ -181,7 +185,20 @@ export function DeliveryOrderCreateFormStore() {
   }
 
   function updateField<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      if (isDefaultRateField(key)) {
+        const previousDefault = current[key];
+        setRows((currentRows) =>
+          currentRows.map((row) =>
+            shouldUseUpdatedDefault(row[key], previousDefault)
+              ? { ...row, [key]: value }
+              : row,
+          ),
+        );
+      }
+
+      return { ...current, [key]: value };
+    });
     setErrors((current) => ({ ...current, [key]: undefined }));
   }
 
@@ -850,6 +867,19 @@ function toNumber(value: string): number {
 
 function isOverride(value: string, defaultValue: string): boolean {
   return value.trim() !== "" && value.trim() !== defaultValue.trim();
+}
+
+function isDefaultRateField(field: keyof FormState): field is DefaultRateField {
+  return (
+    field === "salesRatePerTon" ||
+    field === "roadMoney" ||
+    field === "partnerRatePerTon" ||
+    field === "gasMoney"
+  );
+}
+
+function shouldUseUpdatedDefault(rowValue: string, previousDefault: string): boolean {
+  return rowValue.trim() === "" || rowValue.trim() === previousDefault.trim();
 }
 
 function isNonEmptyRow(row: TransactionRow): boolean {
