@@ -32,3 +32,23 @@ export interface DeliveryOrder {
   customerPaidAt?: string;
   status: DeliveryOrderStatus;
 }
+
+export interface CreateDeliveryOrderInput {
+  id: string;
+  doNumber?: string;
+  truckPlate: string;
+  driverName: string;
+  partnerName: string;
+  customerName: string;
+  originMine: string;
+  destinationPort: string;
+  loadingDate: string;
+  tonnage: number;
+  transportPrice: number;
+  roadMoney: number;
+  gasMoney: number;
+  unloadingDate?: string;
+  partnerInvoiceNumber?: string;
+  sellingPrice?: number;
+  salesGasMoney?: number;
+}
