@@ -14,7 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  createPartnerFromInput,
   filterPartners,
   isValidEmail,
   type CreatePartnerInput,
@@ -23,7 +22,8 @@ import { cn } from "@/lib/utils";
 import type { Partner } from "@/types/partner";
 
 interface PartnerListProps {
-  initialPartners: Partner[];
+  partners: Partner[];
+  onCreatePartner: (input: CreatePartnerInput) => Partner;
 }
 
 const emptyForm: CreatePartnerInput = {
@@ -41,8 +41,7 @@ const emptyForm: CreatePartnerInput = {
   isActive: true,
 };
 
-export function PartnerList({ initialPartners }: PartnerListProps) {
-  const [partners, setPartners] = useState<Partner[]>(initialPartners);
+export function PartnerList({ partners, onCreatePartner }: PartnerListProps) {
   const [search, setSearch] = useState("");
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -88,9 +87,8 @@ export function PartnerList({ initialPartners }: PartnerListProps) {
       return;
     }
 
-    const newPartner = createPartnerFromInput(partners, form);
+    onCreatePartner(form);
 
-    setPartners((current) => [newPartner, ...current]);
     closeCreateDialog();
     setToastMessage("Mitra berhasil ditambahkan.");
   }

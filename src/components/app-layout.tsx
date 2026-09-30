@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { DemoDataReset } from "@/components/demo-data-reset";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -19,8 +20,11 @@ export function AppLayout({ children }: AppLayoutProps) {
                 Operations System
               </h1>
             </div>
-            <div className="rounded-md border bg-card px-3 py-1.5 text-sm text-muted-foreground">
-              Demo MVP · Data simulasi
+            <div className="flex items-center gap-2">
+              <div className="rounded-md border bg-card px-3 py-1.5 text-sm text-muted-foreground">
+                Demo MVP · Data simulasi
+              </div>
+              <DemoDataReset />
             </div>
           </div>
         </header>

@@ -1,6 +1,5 @@
-import { PartnerList } from "@/components/partners/partner-list";
-import { mockPartners } from "@/data/mock-partners";
+import { PartnerListStore } from "@/components/partners/partner-list-store";
 
 export default function PartnersPage() {
-  return <PartnerList initialPartners={mockPartners} />;
+  return <PartnerListStore />;
 }
