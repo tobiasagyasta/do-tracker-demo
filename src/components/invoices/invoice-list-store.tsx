@@ -1,11 +1,11 @@
 "use client";
 
-import { DeliveryOrderTracker } from "@/components/delivery-orders/delivery-order-tracker";
+import { InvoiceList } from "@/components/invoices/invoice-list";
 import { StoreLoading } from "@/components/store-loading";
 import { selectDeliveryOrders, selectHasHydrated } from "@/stores/demo-store";
 import { useDemoStore } from "@/stores/demo-store-provider";
 
-export function DeliveryOrderTrackerStore() {
+export function InvoiceListStore() {
   const hasHydrated = useDemoStore(selectHasHydrated);
   const orders = useDemoStore(selectDeliveryOrders);
 
@@ -13,5 +13,5 @@ export function DeliveryOrderTrackerStore() {
     return <StoreLoading />;
   }
 
-  return <DeliveryOrderTracker orders={orders} />;
+  return <InvoiceList orders={orders} />;
 }

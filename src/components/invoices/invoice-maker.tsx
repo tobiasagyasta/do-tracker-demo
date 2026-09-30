@@ -25,20 +25,24 @@ import {
 } from "@/lib/invoice";
 import { downloadInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { cn } from "@/lib/utils";
+import type { UpdateResult } from "@/stores/demo-store";
 import type { DeliveryOrder } from "@/types/delivery-order";
 
 interface InvoiceMakerProps {
-  initialOrder: DeliveryOrder;
+  order: DeliveryOrder;
+  onUpdateOrder: (
+    id: string,
+    updates: Partial<DeliveryOrder>,
+  ) => UpdateResult<DeliveryOrder>;
 }
 
 const today = new Date().toISOString().slice(0, 10);
 
-export function InvoiceMaker({ initialOrder }: InvoiceMakerProps) {
-  const [order, setOrder] = useState<DeliveryOrder>(initialOrder);
+export function InvoiceMaker({ order, onUpdateOrder }: InvoiceMakerProps) {
   const [toastMessage, setToastMessage] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
-  const [sellingPrice, setSellingPrice] = useState(String(initialOrder.sellingPrice));
-  const [salesGasMoney, setSalesGasMoney] = useState(String(initialOrder.salesGasMoney));
+  const [sellingPrice, setSellingPrice] = useState(String(order.sellingPrice));
+  const [salesGasMoney, setSalesGasMoney] = useState(String(order.salesGasMoney));
   const invoiceNumber = order.salesInvoiceNumber ?? generateDemoInvoiceNumber(order);
   const formTotals = useMemo(
     () => calculateInvoiceTotals(Number(sellingPrice) || 0, Number(salesGasMoney) || 0),
@@ -46,8 +50,7 @@ export function InvoiceMaker({ initialOrder }: InvoiceMakerProps) {
   );
 
   function handleCreateInvoice() {
-    setOrder((current) => ({
-      ...current,
+    const result = onUpdateOrder(order.id, {
       salesInvoiceNumber: invoiceNumber,
       salesInvoiceDate: invoiceDate,
       sellingPrice: formTotals.baseSalesValue,
@@ -55,7 +58,13 @@ export function InvoiceMaker({ initialOrder }: InvoiceMakerProps) {
       salesPph23: formTotals.pph23,
       salesTotal: formTotals.netTotal,
       status: "WAITING_CUSTOMER_PAYMENT",
-    }));
+    });
+
+    if (!result.ok) {
+      setToastMessage("Delivery Order tidak ditemukan.");
+      return;
+    }
+
     setToastMessage("Invoice berhasil dibuat.");
   }
 

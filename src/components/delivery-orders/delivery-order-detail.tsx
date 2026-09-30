@@ -29,10 +29,15 @@ import {
 } from "@/lib/delivery-orders";
 import { formatDateID, formatRupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { UpdateResult } from "@/stores/demo-store";
 import type { DeliveryOrder, DeliveryOrderStatus } from "@/types/delivery-order";
 
 interface DeliveryOrderDetailProps {
-  initialOrder: DeliveryOrder;
+  order: DeliveryOrder;
+  onUpdateOrder: (
+    id: string,
+    updates: Partial<DeliveryOrder>,
+  ) => UpdateResult<DeliveryOrder>;
 }
 
 type DialogType = "partner-payment" | "customer-payment" | null;
@@ -54,27 +59,36 @@ const statusStepIndex: Record<DeliveryOrderStatus, number> = {
   COMPLETED: 4,
 };
 
-export function DeliveryOrderDetail({ initialOrder }: DeliveryOrderDetailProps) {
-  const [order, setOrder] = useState<DeliveryOrder>(initialOrder);
+export function DeliveryOrderDetail({ order, onUpdateOrder }: DeliveryOrderDetailProps) {
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [toastMessage, setToastMessage] = useState("");
 
   function handlePartnerPayment(paymentDate: string) {
-    setOrder((current) => ({
-      ...current,
+    const result = onUpdateOrder(order.id, {
       partnerPaidAt: paymentDate,
       status: "PARTNER_PAID_NOT_INVOICED",
-    }));
+    });
+
+    if (!result.ok) {
+      setToastMessage("Delivery Order tidak ditemukan.");
+      return;
+    }
+
     setActiveDialog(null);
     setToastMessage("Pembayaran mitra berhasil dicatat.");
   }
 
   function handleCustomerPayment(paymentDate: string) {
-    setOrder((current) => ({
-      ...current,
+    const result = onUpdateOrder(order.id, {
       customerPaidAt: paymentDate,
       status: "COMPLETED",
-    }));
+    });
+
+    if (!result.ok) {
+      setToastMessage("Delivery Order tidak ditemukan.");
+      return;
+    }
+
     setActiveDialog(null);
     setToastMessage("Pembayaran tambang berhasil dicatat.");
   }

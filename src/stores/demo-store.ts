@@ -209,4 +209,6 @@ export const selectHasHydrated = (state: DemoStore) => state.hasHydrated;
 export const selectDeliveryOrders = (state: DemoStore) => state.deliveryOrders;
 export const selectPartners = (state: DemoStore) => state.partners;
 export const selectCreatePartner = (state: DemoStore) => state.createPartner;
+export const selectUpdateDeliveryOrder = (state: DemoStore) =>
+  state.updateDeliveryOrder;
 export const selectResetDemoData = (state: DemoStore) => state.resetDemoData;

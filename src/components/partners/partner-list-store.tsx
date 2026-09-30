@@ -1,6 +1,7 @@
 "use client";
 
 import { PartnerList } from "@/components/partners/partner-list";
+import { StoreLoading } from "@/components/store-loading";
 import {
   selectCreatePartner,
   selectHasHydrated,
@@ -14,7 +15,7 @@ export function PartnerListStore() {
   const createPartner = useDemoStore(selectCreatePartner);
 
   if (!hasHydrated) {
-    return <p className="text-sm text-muted-foreground">Memuat data demo...</p>;
+    return <StoreLoading />;
   }
 
   return <PartnerList partners={partners} onCreatePartner={createPartner} />;
