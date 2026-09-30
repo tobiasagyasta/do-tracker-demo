@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,7 @@ import type {
   DeliveryOrder,
   DeliveryOrderTransaction,
   IssueSalesInvoiceInput,
+  InvoiceDraft,
   SalesInvoice,
 } from "@/types/delivery-order";
 
@@ -33,7 +34,10 @@ interface InvoiceBuilderProps {
   deliveryOrders: DeliveryOrder[];
   eligibleTransactions: DeliveryOrderTransaction[];
   invoices: SalesInvoice[];
+  invoiceDraft?: InvoiceDraft;
   onIssueInvoice: (input: IssueSalesInvoiceInput) => StoreActionResult<SalesInvoice>;
+  onSaveDraft: (draft: InvoiceDraft) => StoreActionResult<InvoiceDraft>;
+  onClearDraft: () => void;
 }
 
 interface InvoiceFormState {
@@ -54,7 +58,10 @@ export function InvoiceBuilder({
   deliveryOrders,
   eligibleTransactions,
   invoices,
+  invoiceDraft,
   onIssueInvoice,
+  onSaveDraft,
+  onClearDraft,
 }: InvoiceBuilderProps) {
   const router = useRouter();
   const [form, setForm] = useState<InvoiceFormState>(() => ({
@@ -70,7 +77,12 @@ export function InvoiceBuilder({
   }));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [errorMessage, setErrorMessage] = useState("");
+  const [draftMessage, setDraftMessage] = useState("");
+  const [removedDraftTransactionCount, setRemovedDraftTransactionCount] = useState(0);
+  const [requiresAdjustedDraftConfirmation, setRequiresAdjustedDraftConfirmation] = useState(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const skipNextDraftSave = useRef(false);
 
   const ordersById = useMemo(
     () => new Map(deliveryOrders.map((order) => [order.id, order])),
@@ -106,6 +118,57 @@ export function InvoiceBuilder({
     if (key === "customerName") {
       setSelectedIds(new Set());
     }
+  }
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (skipNextDraftSave.current) {
+        skipNextDraftSave.current = false;
+        return;
+      }
+
+      if (isEmptyInvoiceDraft(form, selectedIds)) return;
+      onSaveDraft(buildPersistedInvoiceDraft(form, selectedIds));
+    }, 500);
+
+    return () => window.clearTimeout(handle);
+  }, [form, onSaveDraft, selectedIds]);
+
+  function restoreDraft() {
+    if (!invoiceDraft) return;
+
+    const eligibleIds = new Set(eligibleTransactions.map((transaction) => transaction.id));
+    const retainedIds = invoiceDraft.transactionIds.filter(
+      (id) => eligibleIds.has(id),
+    );
+    const removedCount = invoiceDraft.transactionIds.length - retainedIds.length;
+
+    setHasRestoredDraft(true);
+    setForm({
+      customerName: invoiceDraft.customerBillingDetails.name,
+      invoiceDate: invoiceDraft.invoiceDate,
+      invoiceNumber: invoiceDraft.invoiceNumber,
+      purchaseOrderReference: invoiceDraft.purchaseOrderReference ?? "",
+      billingAddress: invoiceDraft.customerBillingDetails.address ?? "",
+      taxId: invoiceDraft.customerBillingDetails.taxId ?? "",
+      pph23Rate: String(invoiceDraft.pph23Rate),
+      rentalDepositDeduction: String(invoiceDraft.rentalDepositDeduction),
+      notes: invoiceDraft.notes ?? "",
+    });
+    setSelectedIds(new Set(retainedIds));
+    setRemovedDraftTransactionCount(removedCount);
+    setRequiresAdjustedDraftConfirmation(removedCount > 0);
+    setDraftMessage(
+      removedCount > 0
+        ? `${removedCount} transaksi draft dihapus karena tidak tersedia, tidak eligible, atau sudah invoiced.`
+        : "Draft invoice dipulihkan.",
+    );
+  }
+
+  function discardDraft() {
+    skipNextDraftSave.current = true;
+    onClearDraft();
+    setDraftMessage("Draft invoice dihapus.");
   }
 
   function toggleTransaction(transactionId: string, checked: boolean) {
@@ -146,6 +209,14 @@ export function InvoiceBuilder({
       return;
     }
 
+    if (requiresAdjustedDraftConfirmation) {
+      const confirmed = window.confirm(
+        "Draft invoice sudah disesuaikan karena ada transaksi yang tidak lagi eligible. Terbitkan dengan transaksi tersisa?",
+      );
+      if (!confirmed) return;
+      setRequiresAdjustedDraftConfirmation(false);
+    }
+
     if (!form.invoiceNumber.trim()) {
       setErrorMessage("Nomor invoice wajib diisi.");
       return;
@@ -174,6 +245,7 @@ export function InvoiceBuilder({
       return;
     }
 
+    onClearDraft();
     startTransition(() => router.push(`/invoices/${result.record.id}`));
   }
 
@@ -194,6 +266,24 @@ export function InvoiceBuilder({
       {errorMessage ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
           {errorMessage}
+        </div>
+      ) : null}
+
+      {invoiceDraft && !hasRestoredDraft ? (
+        <div className="rounded-md border bg-card px-4 py-3 text-sm shadow-sm">
+          <p className="font-medium">Draft invoice tersedia</p>
+          <p className="mt-1 text-muted-foreground">Draft tidak dipulihkan otomatis. Total akan dihitung ulang dari transaksi eligible saat dipulihkan.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={restoreDraft}>Lanjutkan Draft</Button>
+            <Button type="button" size="sm" variant="outline" onClick={discardDraft}>Hapus Draft</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {draftMessage ? (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+          {draftMessage}
+          {removedDraftTransactionCount > 0 ? <span className="block font-medium">Konfirmasi diperlukan sebelum invoice diterbitkan.</span> : null}
         </div>
       ) : null}
 
@@ -493,6 +583,35 @@ function buildDraftInvoice(
     notes: form.notes || undefined,
     lines,
   };
+}
+
+function buildPersistedInvoiceDraft(form: InvoiceFormState, selectedIds: Set<string>): InvoiceDraft {
+  return {
+    id: "invoice-draft",
+    invoiceNumber: form.invoiceNumber,
+    invoiceDate: form.invoiceDate,
+    customerBillingDetails: {
+      name: form.customerName,
+      address: form.billingAddress.trim() || undefined,
+      taxId: form.taxId.trim() || undefined,
+    },
+    purchaseOrderReference: form.purchaseOrderReference.trim() || undefined,
+    transactionIds: [...selectedIds],
+    pph23Rate: toNumber(form.pph23Rate),
+    rentalDepositDeduction: toNumber(form.rentalDepositDeduction),
+    notes: form.notes.trim() || undefined,
+  };
+}
+
+function isEmptyInvoiceDraft(form: InvoiceFormState, selectedIds: Set<string>): boolean {
+  return (
+    form.customerName === "" &&
+    selectedIds.size === 0 &&
+    form.purchaseOrderReference.trim() === "" &&
+    form.billingAddress.trim() === "" &&
+    form.taxId.trim() === "" &&
+    form.notes.trim() === ""
+  );
 }
 
 function generateInvoiceNumber(sequence: number): string {

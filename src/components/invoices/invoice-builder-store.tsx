@@ -8,7 +8,10 @@ import {
   selectDeliveryOrders,
   selectDeliveryOrderTransactions,
   selectHasHydrated,
+  selectInvoiceDraft,
   selectInvoices,
+  selectCreateInvoiceDraft,
+  selectClearInvoiceDraft,
 } from "@/stores/demo-store";
 import { useDemoStore } from "@/stores/demo-store-provider";
 
@@ -17,6 +20,9 @@ export function InvoiceBuilderStore() {
   const deliveryOrders = useDemoStore(selectDeliveryOrders);
   const transactions = useDemoStore(selectDeliveryOrderTransactions);
   const invoices = useDemoStore(selectInvoices);
+  const invoiceDraft = useDemoStore(selectInvoiceDraft);
+  const createInvoiceDraft = useDemoStore(selectCreateInvoiceDraft);
+  const clearInvoiceDraft = useDemoStore(selectClearInvoiceDraft);
   const issueInvoice = useDemoStore((state) => state.issueInvoice);
   const eligibleTransactions = useMemo(
     () =>
@@ -36,7 +42,10 @@ export function InvoiceBuilderStore() {
       deliveryOrders={deliveryOrders}
       eligibleTransactions={eligibleTransactions}
       invoices={invoices}
+      invoiceDraft={invoiceDraft}
       onIssueInvoice={issueInvoice}
+      onSaveDraft={createInvoiceDraft}
+      onClearDraft={clearInvoiceDraft}
     />
   );
 }
