@@ -100,14 +100,14 @@ export function createDeliveryOrderFromInput(
 ): DeliveryOrder {
   const sellingPrice = input.sellingPrice ?? 0;
   const salesGasMoney = input.salesGasMoney ?? 0;
-  const partnerPph23 = calculatePartnerPph23(input.transportPrice);
+  const partnerPph23 = input.partnerPph23 ?? calculatePartnerPph23(input.transportPrice);
   const purchaseTotal = calculatePurchaseTotal({
     transportPrice: input.transportPrice,
     roadMoney: input.roadMoney,
     gasMoney: input.gasMoney,
     partnerPph23,
   });
-  const salesPph23 = calculateSalesPph23(sellingPrice);
+  const salesPph23 = input.salesPph23 ?? calculateSalesPph23(sellingPrice);
   const salesTotal = calculateSalesTotal({
     sellingPrice,
     salesGasMoney,

@@ -47,8 +47,10 @@ export interface CreateDeliveryOrderInput {
   transportPrice: number;
   roadMoney: number;
   gasMoney: number;
+  partnerPph23?: number;
   unloadingDate?: string;
   partnerInvoiceNumber?: string;
   sellingPrice?: number;
   salesGasMoney?: number;
+  salesPph23?: number;
 }

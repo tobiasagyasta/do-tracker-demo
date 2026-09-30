@@ -84,10 +84,6 @@ export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
     setFilters(defaultFilters);
   }
 
-  function handleCreateClick() {
-    window.alert("Form pembuatan DO akan tersedia pada tahap berikutnya.");
-  }
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -99,10 +95,10 @@ export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
             Pantau seluruh Delivery Order dan status transaksi operasional.
           </p>
         </div>
-        <Button type="button" onClick={handleCreateClick} className="w-fit">
+        <Link href="/delivery-orders/new" className={cn(buttonVariants(), "w-fit")}>
           <Plus />
           Buat DO
-        </Button>
+        </Link>
       </div>
 
       <section className="rounded-lg border bg-card p-4 shadow-sm">
