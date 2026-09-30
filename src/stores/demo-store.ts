@@ -95,18 +95,97 @@ function cloneSeedDeliveryOrders(): DeliveryOrder[] {
 }
 
 function cloneSeedDeliveryOrderTransactions(): DeliveryOrderTransaction[] {
-  return cloneSeedDeliveryOrders().map(legacyDeliveryOrderToTransaction);
+  const transactions = cloneSeedDeliveryOrders().map(legacyDeliveryOrderToTransaction);
+  const examples = createMultiTransactionInvoiceExamples(cloneSeedDeliveryOrders());
+  const replacedParentIds = new Set(examples.transactions.map((transaction) => transaction.deliveryOrderId));
+
+  return [
+    ...examples.transactions,
+    ...transactions.filter((transaction) => !replacedParentIds.has(transaction.deliveryOrderId)),
+  ];
 }
 
 function cloneSeedInvoices(): SalesInvoice[] {
-  return cloneSeedDeliveryOrders().flatMap((order) => {
+  const orders = cloneSeedDeliveryOrders();
+  const examples = createMultiTransactionInvoiceExamples(orders);
+  const replacedParentIds = new Set(examples.transactions.map((transaction) => transaction.deliveryOrderId));
+
+  return [
+    ...examples.invoices,
+    ...orders.filter((order) => !replacedParentIds.has(order.id)).flatMap((order) => {
     const invoice = legacyDeliveryOrderToSalesInvoice(order);
     return invoice ? [invoice] : [];
-  });
+    }),
+  ];
 }
 
 function cloneSeedPartners(): Partner[] {
   return mockPartners.map((partner) => ({ ...partner }));
+}
+
+function createMultiTransactionInvoiceExamples(orders: DeliveryOrder[]): {
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+} {
+  const ordersById = new Map(orders.map((order) => [order.id, order]));
+  const examples = [
+    {
+      parentId: "do-001",
+      invoiceId: "INV-SLS-2609-M001",
+      invoiceDate: "2026-09-08",
+      paymentDate: "2026-09-18",
+      transactions: [
+        { id: "trx-do-001-01", transactionNumber: "SPB-2609-001A", truckPlate: "B 9142 UYX", driverName: "Agus Santoso", tonnage: 31.8, loadingDate: "2026-09-01", unloadingDate: "2026-09-02" },
+        { id: "trx-do-001-02", transactionNumber: "SPB-2609-001B", truckPlate: "B 9031 UYR", driverName: "Maman Firmansyah", tonnage: 29.4, loadingDate: "2026-09-01", unloadingDate: "2026-09-02" },
+        { id: "trx-do-001-03", transactionNumber: "SPB-2609-001C", truckPlate: "B 8872 UZA", driverName: "Rizal Pratama", tonnage: 30.6, loadingDate: "2026-09-02", unloadingDate: "2026-09-03" },
+      ],
+    },
+    {
+      parentId: "do-002",
+      invoiceId: "INV-SLS-2609-M002",
+      invoiceDate: "2026-09-10",
+      transactions: [
+        { id: "trx-do-002-01", transactionNumber: "SPB-2609-002A", truckPlate: "KT 8721 BN", driverName: "Rudi Hartono", tonnage: 29.5, loadingDate: "2026-09-03", unloadingDate: "2026-09-04" },
+        { id: "trx-do-002-02", transactionNumber: "SPB-2609-002B", truckPlate: "KT 9014 BP", driverName: "Ahmad Fauzan", tonnage: 28.7, loadingDate: "2026-09-04", unloadingDate: "2026-09-05" },
+      ],
+    },
+  ];
+
+  const transactions = examples.flatMap((example) => {
+    const order = ordersById.get(example.parentId);
+    if (!order) return [];
+
+    return example.transactions.map((transaction) => ({
+      ...legacyDeliveryOrderToTransaction(order),
+      ...transaction,
+      deliveryOrderId: order.id,
+      salesInvoiceId: example.invoiceId,
+    }));
+  });
+  const invoices = examples.flatMap((example) => {
+    const order = ordersById.get(example.parentId);
+    if (!order) return [];
+
+    const invoiceTransactions = transactions.filter(
+      (transaction) => transaction.deliveryOrderId === order.id,
+    );
+
+    return [{
+      id: example.invoiceId,
+      invoiceNumber: example.invoiceId,
+      invoiceDate: example.invoiceDate,
+      customerName: order.customerName,
+      customerBillingDetails: { name: order.customerName },
+      transactionIds: invoiceTransactions.map((transaction) => transaction.id),
+      status: example.paymentDate ? "PAID" : "ISSUED",
+      paymentDate: example.paymentDate,
+      pph23Rate: INVOICE_PPH23_RATE,
+      rentalDepositDeduction: 0,
+      lines: invoiceTransactions.map((transaction) => createInvoiceLineSnapshot(transaction, order)),
+    } satisfies SalesInvoice];
+  });
+
+  return { transactions, invoices };
 }
 
 function getSeedState(): DemoStoreState {
