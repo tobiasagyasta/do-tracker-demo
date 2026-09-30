@@ -8,27 +8,27 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { DeliveryOrderStatusCounts } from "@/lib/dashboard";
+import type { DeliveryOrderProgressCounts } from "@/lib/dashboard";
 
 interface DoStatusChartProps {
-  statusCounts: DeliveryOrderStatusCounts;
+  statusCounts: DeliveryOrderProgressCounts;
 }
 
 const chartConfig = [
   {
-    key: "UNPAID_PARTNER",
+    key: "PARTNER_UNPAID",
     label: "Belum Dibayar ke Mitra",
     shortLabel: "Belum Dibayar",
     color: "#dc2626",
   },
   {
-    key: "PARTNER_PAID_NOT_INVOICED",
+    key: "ELIGIBLE_UNINVOICED",
     label: "Belum Ditagih",
     shortLabel: "Belum Ditagih",
     color: "#ea580c",
   },
   {
-    key: "WAITING_CUSTOMER_PAYMENT",
+    key: "INVOICED_UNPAID",
     label: "Menunggu Pembayaran",
     shortLabel: "Menunggu Bayar",
     color: "#2563eb",
@@ -38,6 +38,12 @@ const chartConfig = [
     label: "Lengkap",
     shortLabel: "Lengkap",
     color: "#059669",
+  },
+  {
+    key: "MIXED",
+    label: "Campuran",
+    shortLabel: "Campuran",
+    color: "#7c3aed",
   },
 ] as const;
 
@@ -75,7 +81,7 @@ export function DoStatusChart({ statusCounts }: DoStatusChartProps) {
               ))}
             </Pie>
             <Tooltip
-              formatter={(value, name) => [`${Number(value ?? 0)} DO`, name]}
+              formatter={(value, name) => [`${Number(value ?? 0)} DO induk`, name]}
             />
           </PieChart>
         </ResponsiveContainer>

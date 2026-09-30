@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { StatusBadge } from "@/components/delivery-orders/status-badge";
+import { ProgressStatusBadge } from "@/components/delivery-orders/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Table,
@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { deliveryOrderStatusLabels } from "@/lib/delivery-order-status";
+import { deliveryOrderProgressLabels } from "@/lib/delivery-order-status";
 import {
   filterDeliveryOrders,
   formatTonnage,
@@ -25,11 +25,16 @@ import {
   type DeliveryOrderFilters,
 } from "@/lib/delivery-orders";
 import { formatDateID, formatRupiah } from "@/lib/format";
+import { calculateSalesInvoiceTotals } from "@/lib/invoice";
+import { deriveParentDeliveryOrderProgress, getParentTransactions, type ParentDeliveryOrderProgressStatus } from "@/lib/lifecycle";
+import { calculatePartnerTransactionCost } from "@/lib/partner-recap";
 import { cn } from "@/lib/utils";
-import type { DeliveryOrder, DeliveryOrderStatus } from "@/types/delivery-order";
+import type { DeliveryOrder, DeliveryOrderTransaction, SalesInvoice } from "@/types/delivery-order";
 
 interface DeliveryOrderTrackerProps {
   orders: DeliveryOrder[];
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
 }
 
 const defaultFilters: DeliveryOrderFilters = {
@@ -41,36 +46,68 @@ const defaultFilters: DeliveryOrderFilters = {
   loadingDateTo: "",
 };
 
-const statusOptions: Array<DeliveryOrderStatus | "ALL"> = [
+const statusOptions: Array<ParentDeliveryOrderProgressStatus | "ALL"> = [
   "ALL",
-  "UNPAID_PARTNER",
-  "PARTNER_PAID_NOT_INVOICED",
-  "WAITING_CUSTOMER_PAYMENT",
+  "PARTNER_UNPAID",
+  "ELIGIBLE_UNINVOICED",
+  "INVOICED_UNPAID",
   "COMPLETED",
+  "MIXED",
 ];
 
-export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
+export function DeliveryOrderTracker({ orders, transactions, invoices }: DeliveryOrderTrackerProps) {
   const [filters, setFilters] = useState<DeliveryOrderFilters>(defaultFilters);
 
   const partnerOptions = useMemo(() => getUniquePartners(orders), [orders]);
   const customerOptions = useMemo(() => getUniqueCustomers(orders), [orders]);
-  const filteredOrders = useMemo(
-    () => sortDeliveryOrdersByNewest(filterDeliveryOrders(orders, filters)),
-    [orders, filters],
+  const filteredOrders = useMemo(() => {
+    const baseFiltered = filterDeliveryOrders(orders, { ...filters, status: "ALL" });
+
+    return sortDeliveryOrdersByNewest(
+      filters.status === "ALL"
+        ? baseFiltered
+        : baseFiltered.filter((order) => {
+            const progress = deriveParentDeliveryOrderProgress(
+              getParentTransactions(order, transactions),
+              invoices,
+            );
+
+            return progress.status === filters.status;
+          }),
+    );
+  }, [orders, filters, transactions, invoices]);
+  const orderSummaries = useMemo(
+    () =>
+      new Map(
+        filteredOrders.map((order) => {
+          const orderTransactions = getParentTransactions(order, transactions);
+          const progress = deriveParentDeliveryOrderProgress(orderTransactions, invoices);
+          const invoiceIds = new Set(orderTransactions.map((transaction) => transaction.salesInvoiceId).filter(Boolean));
+          const salesTotal = invoices
+            .filter((invoice) => invoiceIds.has(invoice.id) && invoice.status !== "CANCELLED")
+            .reduce((total, invoice) => total + calculateSalesInvoiceTotals(invoice).grandTotal, 0);
+          const purchaseTotal = orderTransactions.reduce(
+            (total, transaction) => total + calculatePartnerTransactionCost(transaction).totalPayment,
+            0,
+          );
+
+          return [order.id, { progress, purchaseTotal, salesTotal }] as const;
+        }),
+      ),
+    [filteredOrders, transactions, invoices],
   );
   const isFilterActive = hasActiveDeliveryOrderFilters(filters);
   const summary = useMemo(
     () =>
       filteredOrders.reduce(
         (totals, order) => ({
-          tonnage: totals.tonnage + order.tonnage,
-          purchaseTotal: totals.purchaseTotal + order.purchaseTotal,
-          salesTotal:
-            totals.salesTotal + (order.salesInvoiceNumber ? order.salesTotal : 0),
+          tonnage: totals.tonnage + (orderSummaries.get(order.id)?.progress.totalTonnage ?? 0),
+          purchaseTotal: totals.purchaseTotal + (orderSummaries.get(order.id)?.purchaseTotal ?? 0),
+          salesTotal: totals.salesTotal + (orderSummaries.get(order.id)?.salesTotal ?? 0),
         }),
         { tonnage: 0, purchaseTotal: 0, salesTotal: 0 },
       ),
-    [filteredOrders],
+    [filteredOrders, orderSummaries],
   );
 
   function updateFilter<Key extends keyof DeliveryOrderFilters>(
@@ -130,7 +167,7 @@ export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
             >
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {status === "ALL" ? "Semua Status" : deliveryOrderStatusLabels[status]}
+                  {status === "ALL" ? "Semua Status" : deliveryOrderProgressLabels[status]}
                 </option>
               ))}
             </select>
@@ -220,8 +257,7 @@ export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
               <TableHead>Tanggal Muat</TableHead>
               <TableHead>Mitra</TableHead>
               <TableHead>Tambang</TableHead>
-              <TableHead>No Polisi</TableHead>
-              <TableHead>Pengemudi</TableHead>
+              <TableHead>Transaksi</TableHead>
               <TableHead className="text-right">Tonase</TableHead>
               <TableHead className="text-right">Total Pembelian</TableHead>
               <TableHead className="text-right">Total Penjualan</TableHead>
@@ -258,20 +294,21 @@ export function DeliveryOrderTracker({ orders }: DeliveryOrderTrackerProps) {
                   <TableCell className="min-w-52">{order.partnerName}</TableCell>
                   <TableCell className="min-w-52">{order.customerName}</TableCell>
                   <TableCell className="font-mono font-semibold">
-                    {order.truckPlate}
-                  </TableCell>
-                  <TableCell>{order.driverName}</TableCell>
-                  <TableCell className="text-right">
-                    {formatTonnage(order.tonnage)}
+                    {orderSummaries.get(order.id)?.progress.transactionCount ?? 0} baris
                   </TableCell>
                   <TableCell className="text-right">
-                    {formatRupiah(order.purchaseTotal)}
+                    {formatTonnage(orderSummaries.get(order.id)?.progress.totalTonnage ?? 0)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {order.salesInvoiceNumber ? formatRupiah(order.salesTotal) : "-"}
+                    {formatRupiah(orderSummaries.get(order.id)?.purchaseTotal ?? 0)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {(orderSummaries.get(order.id)?.salesTotal ?? 0) > 0
+                      ? formatRupiah(orderSummaries.get(order.id)?.salesTotal ?? 0)
+                      : "-"}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={order.status} />
+                    <ProgressStatusBadge status={orderSummaries.get(order.id)?.progress.status ?? "PARTNER_UNPAID"} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Link

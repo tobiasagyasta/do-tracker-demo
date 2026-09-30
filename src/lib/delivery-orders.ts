@@ -1,8 +1,9 @@
 import type { DeliveryOrder, DeliveryOrderStatus } from "@/types/delivery-order";
+import type { ParentDeliveryOrderProgressStatus } from "@/lib/lifecycle";
 
 export interface DeliveryOrderFilters {
   search: string;
-  status: DeliveryOrderStatus | "ALL";
+  status: DeliveryOrderStatus | ParentDeliveryOrderProgressStatus | "ALL";
   partnerName: string;
   customerName: string;
   loadingDateFrom: string;

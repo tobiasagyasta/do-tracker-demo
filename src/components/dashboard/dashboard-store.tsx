@@ -22,14 +22,27 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDashboardMetrics, getRecentDeliveryOrders } from "@/lib/dashboard";
 import { formatRupiah } from "@/lib/format";
-import { selectDeliveryOrders, selectHasHydrated } from "@/stores/demo-store";
+import {
+  selectDeliveryOrderTransactions,
+  selectDeliveryOrders,
+  selectHasHydrated,
+  selectInvoices,
+} from "@/stores/demo-store";
 import { useDemoStore } from "@/stores/demo-store-provider";
 
 export function DashboardStore() {
   const hasHydrated = useDemoStore(selectHasHydrated);
   const orders = useDemoStore(selectDeliveryOrders);
-  const metrics = useMemo(() => getDashboardMetrics(orders), [orders]);
-  const recentOrders = useMemo(() => getRecentDeliveryOrders(orders, 8), [orders]);
+  const transactions = useDemoStore(selectDeliveryOrderTransactions);
+  const invoices = useDemoStore(selectInvoices);
+  const metrics = useMemo(
+    () => getDashboardMetrics({ orders, transactions, invoices }),
+    [orders, transactions, invoices],
+  );
+  const recentOrders = useMemo(
+    () => getRecentDeliveryOrders({ orders, transactions, invoices, limit: 8 }),
+    [orders, transactions, invoices],
+  );
 
   if (!hasHydrated) {
     return <StoreLoading />;
@@ -40,7 +53,7 @@ export function DashboardStore() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
           title="Dashboard"
-          description="Ringkasan operasional dan keuangan berdasarkan seluruh Delivery Order."
+          description="Ringkasan operasional dan keuangan berdasarkan transaksi, invoice, dan pembayaran."
         />
         <Badge variant="outline" className="w-fit bg-background text-muted-foreground">
           Data Demo
@@ -48,11 +61,11 @@ export function DashboardStore() {
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard title="Total DO" value={metrics.totalOrders} description="Seluruh Delivery Order" icon={ClipboardList} />
-        <MetricCard title="Belum Dibayar ke Mitra" value={metrics.statusCounts.UNPAID_PARTNER} description="Kewajiban pembayaran mitra" icon={Truck} />
-        <MetricCard title="Sudah Dibayar, Belum Ditagih" value={metrics.statusCounts.PARTNER_PAID_NOT_INVOICED} description="Siap dibuatkan invoice" icon={FileClock} />
-        <MetricCard title="Menunggu Pembayaran Tambang" value={metrics.statusCounts.WAITING_CUSTOMER_PAYMENT} description="Invoice belum dibayar" icon={ReceiptText} />
-        <MetricCard title="Lengkap" value={metrics.statusCounts.COMPLETED} description="Transaksi selesai" icon={CheckCircle2} />
+        <MetricCard title="Total DO" value={metrics.totalOrders} description={`${metrics.totalTransactions} transaksi`} icon={ClipboardList} />
+        <MetricCard title="Belum Dibayar ke Mitra" value={metrics.transactionCounts.PARTNER_UNPAID} description="Transaksi belum dibayar" icon={Truck} />
+        <MetricCard title="Sudah Dibayar, Belum Ditagih" value={metrics.transactionCounts.ELIGIBLE_UNINVOICED} description="Transaksi siap dibuatkan invoice" icon={FileClock} />
+        <MetricCard title="Menunggu Pembayaran Tambang" value={metrics.transactionCounts.INVOICED_UNPAID} description="Transaksi dalam invoice terbit" icon={ReceiptText} />
+        <MetricCard title="Lengkap" value={metrics.transactionCounts.COMPLETED} description="Transaksi selesai" icon={CheckCircle2} />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

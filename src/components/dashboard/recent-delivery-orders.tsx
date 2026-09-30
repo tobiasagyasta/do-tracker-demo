@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { StatusBadge } from "@/components/delivery-orders/status-badge";
 import {
   Table,
   TableBody,
@@ -10,10 +9,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateID, formatRupiah } from "@/lib/format";
-import type { DeliveryOrder } from "@/types/delivery-order";
+import { transactionLifecycleLabels } from "@/lib/lifecycle";
+import type { RecentDeliveryOrderSummary } from "@/lib/dashboard";
 
 interface RecentDeliveryOrdersProps {
-  orders: DeliveryOrder[];
+  orders: RecentDeliveryOrderSummary[];
 }
 
 const tonnageFormatter = new Intl.NumberFormat("id-ID", {
@@ -49,7 +49,7 @@ export function RecentDeliveryOrders({ orders }: RecentDeliveryOrdersProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {orders.map((order) => (
+          {orders.map(({ order, progress, salesAmount }) => (
             <TableRow key={order.id}>
               <TableCell className="font-medium">
                 <Link
@@ -65,13 +65,15 @@ export function RecentDeliveryOrders({ orders }: RecentDeliveryOrdersProps) {
               <TableCell className="min-w-48">{order.partnerName}</TableCell>
               <TableCell className="min-w-48">{order.customerName}</TableCell>
               <TableCell className="whitespace-nowrap text-right">
-                {formatTonnage(order.tonnage)}
+                {formatTonnage(progress.totalTonnage)}
               </TableCell>
               <TableCell className="whitespace-nowrap text-right">
-                {order.salesInvoiceNumber ? formatRupiah(order.salesTotal) : "-"}
+                {salesAmount > 0 ? formatRupiah(salesAmount) : "-"}
               </TableCell>
               <TableCell className="whitespace-nowrap">
-                <StatusBadge status={order.status} />
+                {progress.status === "MIXED"
+                  ? "Campuran"
+                  : transactionLifecycleLabels[progress.status]}
               </TableCell>
             </TableRow>
           ))}

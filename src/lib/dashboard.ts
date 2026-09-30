@@ -1,79 +1,149 @@
-import type { DeliveryOrder, DeliveryOrderStatus } from "@/types/delivery-order";
+import { calculatePartnerTransactionCost } from "@/lib/partner-recap";
+import { calculateSalesInvoiceTotals } from "@/lib/invoice";
+import {
+  calculateRealizedTransactionMargin,
+  deriveParentDeliveryOrderProgress,
+  getParentTransactions,
+  getTransactionLifecycleStatus,
+  type ParentDeliveryOrderProgress,
+  type ParentDeliveryOrderProgressStatus,
+  type TransactionLifecycleStatus,
+} from "@/lib/lifecycle";
+import type { DeliveryOrder, DeliveryOrderTransaction, SalesInvoice } from "@/types/delivery-order";
 
-export type DeliveryOrderStatusCounts = Record<DeliveryOrderStatus, number>;
+export type DeliveryOrderProgressCounts = Record<ParentDeliveryOrderProgressStatus, number>;
+export type TransactionLifecycleCounts = Record<TransactionLifecycleStatus, number>;
 
 export interface DashboardMetrics {
   totalOrders: number;
-  statusCounts: DeliveryOrderStatusCounts;
+  totalTransactions: number;
+  statusCounts: DeliveryOrderProgressCounts;
+  transactionCounts: TransactionLifecycleCounts;
   outstandingPartnerAmount: number;
   outstandingCustomerAmount: number;
   totalSalesAmount: number;
   realizedGrossMargin: number;
 }
 
-const emptyStatusCounts: DeliveryOrderStatusCounts = {
-  UNPAID_PARTNER: 0,
-  PARTNER_PAID_NOT_INVOICED: 0,
-  WAITING_CUSTOMER_PAYMENT: 0,
+export interface RecentDeliveryOrderSummary {
+  order: DeliveryOrder;
+  progress: ParentDeliveryOrderProgress;
+  salesAmount: number;
+}
+
+const emptyStatusCounts: DeliveryOrderProgressCounts = {
+  PARTNER_UNPAID: 0,
+  ELIGIBLE_UNINVOICED: 0,
+  INVOICED_UNPAID: 0,
+  COMPLETED: 0,
+  MIXED: 0,
+};
+
+const emptyTransactionCounts: TransactionLifecycleCounts = {
+  PARTNER_UNPAID: 0,
+  ELIGIBLE_UNINVOICED: 0,
+  INVOICED_UNPAID: 0,
   COMPLETED: 0,
 };
 
-export function getOperationalStatusCounts(
-  orders: DeliveryOrder[],
-): DeliveryOrderStatusCounts {
-  return orders.reduce<DeliveryOrderStatusCounts>(
-    (counts, order) => ({
+export function getOperationalStatusCounts(input: {
+  orders: DeliveryOrder[];
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+}): DeliveryOrderProgressCounts {
+  return input.orders.reduce<DeliveryOrderProgressCounts>((counts, order) => {
+    const progress = deriveParentDeliveryOrderProgress(
+      getParentTransactions(order, input.transactions),
+      input.invoices,
+    );
+
+    return {
       ...counts,
-      [order.status]: counts[order.status] + 1,
-    }),
-    { ...emptyStatusCounts },
+      [progress.status]: counts[progress.status] + 1,
+    };
+  }, { ...emptyStatusCounts });
+}
+
+export function getTransactionLifecycleCounts(input: {
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+}): TransactionLifecycleCounts {
+  return input.transactions.reduce<TransactionLifecycleCounts>((counts, transaction) => {
+    const status = getTransactionLifecycleStatus(transaction, input.invoices);
+
+    return {
+      ...counts,
+      [status]: counts[status] + 1,
+    };
+  }, { ...emptyTransactionCounts });
+}
+
+export function getOutstandingPartnerAmount(transactions: DeliveryOrderTransaction[]): number {
+  return transactions
+    .filter((transaction) => transaction.partnerPaymentStatus !== "PAID")
+    .reduce((total, transaction) => total + calculatePartnerTransactionCost(transaction).totalPayment, 0);
+}
+
+export function getOutstandingCustomerAmount(invoices: SalesInvoice[]): number {
+  return invoices
+    .filter((invoice) => invoice.status === "ISSUED")
+    .reduce((total, invoice) => total + calculateSalesInvoiceTotals(invoice).grandTotal, 0);
+}
+
+export function getTotalSalesAmount(invoices: SalesInvoice[]): number {
+  return invoices
+    .filter((invoice) => invoice.status !== "CANCELLED")
+    .reduce((total, invoice) => total + calculateSalesInvoiceTotals(invoice).grandTotal, 0);
+}
+
+export function getRealizedGrossMargin(input: {
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+}): number {
+  return input.transactions.reduce(
+    (total, transaction) => total + calculateRealizedTransactionMargin({ transaction, invoices: input.invoices }),
+    0,
   );
 }
 
-export function getOutstandingPartnerAmount(orders: DeliveryOrder[]): number {
-  return orders
-    .filter((order) => !order.partnerPaidAt)
-    .reduce((total, order) => total + order.purchaseTotal, 0);
-}
-
-export function getOutstandingCustomerAmount(orders: DeliveryOrder[]): number {
-  return orders
-    .filter((order) => order.salesInvoiceNumber && !order.customerPaidAt)
-    .reduce((total, order) => total + order.salesTotal, 0);
-}
-
-export function getTotalSalesAmount(orders: DeliveryOrder[]): number {
-  return orders
-    .filter((order) => order.salesInvoiceNumber)
-    .reduce((total, order) => total + order.salesTotal, 0);
-}
-
-export function getRealizedGrossMargin(orders: DeliveryOrder[]): number {
-  return orders
-    .filter((order) => order.status === "COMPLETED")
-    .reduce((total, order) => total + order.salesTotal - order.purchaseTotal, 0);
-}
-
-export function getDashboardMetrics(orders: DeliveryOrder[]): DashboardMetrics {
+export function getDashboardMetrics(input: {
+  orders: DeliveryOrder[];
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+}): DashboardMetrics {
   return {
-    totalOrders: orders.length,
-    statusCounts: getOperationalStatusCounts(orders),
-    outstandingPartnerAmount: getOutstandingPartnerAmount(orders),
-    outstandingCustomerAmount: getOutstandingCustomerAmount(orders),
-    totalSalesAmount: getTotalSalesAmount(orders),
-    realizedGrossMargin: getRealizedGrossMargin(orders),
+    totalOrders: input.orders.length,
+    totalTransactions: input.transactions.length,
+    statusCounts: getOperationalStatusCounts(input),
+    transactionCounts: getTransactionLifecycleCounts(input),
+    outstandingPartnerAmount: getOutstandingPartnerAmount(input.transactions),
+    outstandingCustomerAmount: getOutstandingCustomerAmount(input.invoices),
+    totalSalesAmount: getTotalSalesAmount(input.invoices),
+    realizedGrossMargin: getRealizedGrossMargin(input),
   };
 }
 
-export function getRecentDeliveryOrders(
-  orders: DeliveryOrder[],
-  limit: number,
-): DeliveryOrder[] {
-  return [...orders]
+export function getRecentDeliveryOrders(input: {
+  orders: DeliveryOrder[];
+  transactions: DeliveryOrderTransaction[];
+  invoices: SalesInvoice[];
+  limit: number;
+}): RecentDeliveryOrderSummary[] {
+  return [...input.orders]
     .sort(
       (first, second) =>
         new Date(second.loadingDate).getTime() -
         new Date(first.loadingDate).getTime(),
     )
-    .slice(0, limit);
+    .slice(0, input.limit)
+    .map((order) => {
+      const orderTransactions = getParentTransactions(order, input.transactions);
+      const progress = deriveParentDeliveryOrderProgress(orderTransactions, input.invoices);
+      const invoiceIds = new Set(orderTransactions.map((transaction) => transaction.salesInvoiceId).filter(Boolean));
+      const salesAmount = input.invoices
+        .filter((invoice) => invoiceIds.has(invoice.id) && invoice.status !== "CANCELLED")
+        .reduce((total, invoice) => total + calculateSalesInvoiceTotals(invoice).grandTotal, 0);
+
+      return { order, progress, salesAmount };
+    });
 }
