@@ -18,6 +18,10 @@ export function DeliveryOrderDetailStore({ id }: { id: string }) {
   const transactions = useDemoStore(selectDeliveryOrderTransactions);
   const invoices = useDemoStore(selectInvoices);
   const updateDeliveryOrder = useDemoStore(selectUpdateDeliveryOrder);
+  const updateDeliveryOrderTransaction = useDemoStore(
+    (state) => state.updateDeliveryOrderTransaction,
+  );
+  const markInvoicePaid = useDemoStore((state) => state.markInvoicePaid);
   const order = orders.find((deliveryOrder) => deliveryOrder.id === id);
   const orderTransactions = transactions.filter(
     (transaction) => transaction.deliveryOrderId === id,
@@ -44,6 +48,8 @@ export function DeliveryOrderDetailStore({ id }: { id: string }) {
       transactions={orderTransactions}
       invoices={invoices}
       onUpdateOrder={updateDeliveryOrder}
+      onUpdateTransaction={updateDeliveryOrderTransaction}
+      onMarkInvoicePaid={markInvoicePaid}
     />
   );
 }
