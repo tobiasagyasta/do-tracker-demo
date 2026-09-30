@@ -5,6 +5,7 @@ import {
   Handshake,
   ClipboardList,
   FileText,
+  ReceiptText,
   LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/delivery-orders", label: "Tracking DO", icon: ClipboardList },
   { href: "/partners", label: "Mitra", icon: Handshake },
   { href: "/invoices", label: "Invoice", icon: FileText },
+  { href: "/reports/partner-recap", label: "Rekap Mitra", icon: ReceiptText },
   { href: "/reports", label: "Laporan", icon: BarChart3 },
 ];
 
