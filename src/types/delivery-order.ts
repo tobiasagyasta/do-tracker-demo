@@ -24,6 +24,16 @@ export interface DeliveryOrderSummaryState {
   aggregateStatus: AggregateDeliveryOrderStatus;
 }
 
+export interface CreateParentDeliveryOrderInput {
+  id: string;
+  doNumber: string;
+  customerName: string;
+  partnerName: string;
+  originMine: string;
+  destinationPort: string;
+  defaultRates?: DeliveryOrderCommercialDefaults;
+}
+
 export interface DeliveryOrder {
   id: string;
   doNumber: string;
@@ -80,6 +90,27 @@ export interface DeliveryOrderTransaction {
   salesInvoiceId?: string;
 }
 
+export interface CreateDeliveryOrderTransactionInput {
+  id: string;
+  deliveryOrderId: string;
+  transactionNumber: string;
+  truckPlate: string;
+  driverName: string;
+  loadingDate: string;
+  unloadingDate?: string;
+  loadingLocation: string;
+  unloadingLocation: string;
+  tonnage: number;
+  category?: string;
+  salesRatePerTon: number;
+  roadMoney: number;
+  rentalDeposit?: number;
+  partnerRatePerTon: number;
+  gasMoney: number;
+  partnerInvoiceNumber?: string;
+  partnerPaidAt?: string;
+}
+
 export interface SalesInvoiceCustomerBillingDetails {
   name: string;
   address?: string;
@@ -123,6 +154,21 @@ export interface SalesInvoice {
   rentalDepositDeduction: number;
   deductions?: number;
   lines: InvoiceTransactionLine[];
+}
+
+export interface InvoiceDraft {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  customerBillingDetails: SalesInvoiceCustomerBillingDetails;
+  purchaseOrderReference?: string;
+  transactionIds: string[];
+  pph23Rate: number;
+  rentalDepositDeduction: number;
+}
+
+export interface IssueSalesInvoiceInput extends InvoiceDraft {
+  id: string;
 }
 
 export interface CreateDeliveryOrderInput {
