@@ -102,14 +102,6 @@ const initialForm: DeliveryOrderFormState = {
   isSalesPphManual: false,
 };
 
-const retainedAfterCreateAgain: Array<keyof DeliveryOrderFormState> = [
-  "loadingDate",
-  "partnerId",
-  "customerName",
-  "originMine",
-  "destinationPort",
-];
-
 export function DeliveryOrderCreateFormStore() {
   const router = useRouter();
   const hasHydrated = useDemoStore(selectHasHydrated);
@@ -125,7 +117,6 @@ export function DeliveryOrderCreateFormStore() {
   const [submitMode, setSubmitMode] = useState<SubmitMode | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const quickCreateTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const fieldRefs = useRef<Partial<Record<FieldKey, HTMLElement | null>>>({});
 
   const activePartners = useMemo(
     () => partners.filter((partner) => partner.isActive),
@@ -216,7 +207,7 @@ export function DeliveryOrderCreateFormStore() {
 
     if (!firstField) return;
 
-    fieldRefs.current[firstField]?.focus();
+    document.querySelector<HTMLElement>(`[data-field="${firstField}"]`)?.focus();
   }
 
   function buildInput(): CreateDeliveryOrderInput {
@@ -324,11 +315,10 @@ export function DeliveryOrderCreateFormStore() {
             onFieldChange={updateField}
             onOpenQuickCreate={() => setIsQuickCreateOpen(true)}
             quickCreateTriggerRef={quickCreateTriggerRef}
-            fieldRefs={fieldRefs}
           />
-          <TripSection form={form} errors={errors} onFieldChange={updateField} fieldRefs={fieldRefs} />
-          <PurchaseSection form={form} errors={errors} preview={preview} onFieldChange={updateField} fieldRefs={fieldRefs} />
-          <SalesSection isOpen={isSalesOpen} onToggle={() => setIsSalesOpen((current) => !current)} form={form} errors={errors} preview={preview} onFieldChange={updateField} fieldRefs={fieldRefs} />
+          <TripSection form={form} errors={errors} onFieldChange={updateField} />
+          <PurchaseSection form={form} errors={errors} preview={preview} onFieldChange={updateField} />
+          <SalesSection isOpen={isSalesOpen} onToggle={() => setIsSalesOpen((current) => !current)} form={form} errors={errors} preview={preview} onFieldChange={updateField} />
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
@@ -370,7 +360,6 @@ function MainInfoSection({
   onFieldChange,
   onOpenQuickCreate,
   quickCreateTriggerRef,
-  fieldRefs,
 }: {
   form: DeliveryOrderFormState;
   errors: FieldErrors;
@@ -382,7 +371,6 @@ function MainInfoSection({
   onFieldChange: <Key extends keyof DeliveryOrderFormState>(key: Key, value: DeliveryOrderFormState[Key]) => void;
   onOpenQuickCreate: () => void;
   quickCreateTriggerRef: React.RefObject<HTMLButtonElement | null>;
-  fieldRefs: React.MutableRefObject<Partial<Record<FieldKey, HTMLElement | null>>>;
 }) {
   return (
     <Card>
@@ -392,15 +380,15 @@ function MainInfoSection({
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
         <ReadOnlyField label="Nomor DO" value={doNumberPreview} />
-        <FormInput label="Tanggal Muat" required type="date" value={form.loadingDate} error={errors.loadingDate} inputRef={(node) => { fieldRefs.current.loadingDate = node; }} onChange={(value) => onFieldChange("loadingDate", value)} />
-        <FormInput label="Tanggal Bongkar" optional type="date" value={form.unloadingDate} error={errors.unloadingDate} inputRef={(node) => { fieldRefs.current.unloadingDate = node; }} onChange={(value) => onFieldChange("unloadingDate", value)} />
-        <FormInput label="Tambang" required value={form.customerName} error={errors.customerName} inputRef={(node) => { fieldRefs.current.customerName = node; }} onChange={(value) => onFieldChange("customerName", value)} />
+        <FormInput field="loadingDate" label="Tanggal Muat" required type="date" value={form.loadingDate} error={errors.loadingDate} onChange={(value) => onFieldChange("loadingDate", value)} />
+        <FormInput field="unloadingDate" label="Tanggal Bongkar" optional type="date" value={form.unloadingDate} error={errors.unloadingDate} onChange={(value) => onFieldChange("unloadingDate", value)} />
+        <FormInput field="customerName" label="Tambang" required value={form.customerName} error={errors.customerName} onChange={(value) => onFieldChange("customerName", value)} />
         <div className="md:col-span-2">
           <label className="block text-sm font-medium">
             Mitra <span className="text-destructive">*</span>
             <span className="relative mt-2 block">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input ref={(node) => { fieldRefs.current.partnerId = node; }} value={partnerSearch} onChange={(event) => onPartnerSearchChange(event.target.value)} className={cn("h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", errors.partnerId ? "border-destructive" : "")} aria-invalid={Boolean(errors.partnerId)} />
+              <input data-field="partnerId" value={partnerSearch} onChange={(event) => onPartnerSearchChange(event.target.value)} className={cn("h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", errors.partnerId ? "border-destructive" : "")} aria-invalid={Boolean(errors.partnerId)} />
             </span>
           </label>
           {errors.partnerId ? <p className="mt-1 text-xs text-destructive">{errors.partnerId}</p> : null}
@@ -424,16 +412,16 @@ function MainInfoSection({
   );
 }
 
-function TripSection({ form, errors, onFieldChange, fieldRefs }: SectionProps) {
+function TripSection({ form, errors, onFieldChange }: SectionProps) {
   return (
     <Card>
       <CardHeader><CardTitle>Perjalanan & Kendaraan</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
-        <FormInput label="Tambang Asal" required value={form.originMine} error={errors.originMine} inputRef={(node) => { fieldRefs.current.originMine = node; }} onChange={(value) => onFieldChange("originMine", value)} />
-        <FormInput label="Pelabuhan Tujuan" required value={form.destinationPort} error={errors.destinationPort} inputRef={(node) => { fieldRefs.current.destinationPort = node; }} onChange={(value) => onFieldChange("destinationPort", value)} />
-        <FormInput label="Nomor Polisi" required value={form.truckPlate} error={errors.truckPlate} inputRef={(node) => { fieldRefs.current.truckPlate = node; }} onChange={(value) => onFieldChange("truckPlate", value)} />
-        <FormInput label="Nama Pengemudi" required value={form.driverName} error={errors.driverName} inputRef={(node) => { fieldRefs.current.driverName = node; }} onChange={(value) => onFieldChange("driverName", value)} />
-        <FormInput label="Tonase" required suffix="ton" inputMode="decimal" value={form.tonnage} error={errors.tonnage} inputRef={(node) => { fieldRefs.current.tonnage = node; }} onChange={(value) => onFieldChange("tonnage", value)} />
+        <FormInput field="originMine" label="Tambang Asal" required value={form.originMine} error={errors.originMine} onChange={(value) => onFieldChange("originMine", value)} />
+        <FormInput field="destinationPort" label="Pelabuhan Tujuan" required value={form.destinationPort} error={errors.destinationPort} onChange={(value) => onFieldChange("destinationPort", value)} />
+        <FormInput field="truckPlate" label="Nomor Polisi" required value={form.truckPlate} error={errors.truckPlate} onChange={(value) => onFieldChange("truckPlate", value)} />
+        <FormInput field="driverName" label="Nama Pengemudi" required value={form.driverName} error={errors.driverName} onChange={(value) => onFieldChange("driverName", value)} />
+        <FormInput field="tonnage" label="Tonase" required suffix="ton" inputMode="decimal" value={form.tonnage} error={errors.tonnage} onChange={(value) => onFieldChange("tonnage", value)} />
       </CardContent>
     </Card>
   );
@@ -443,19 +431,18 @@ type SectionProps = {
   form: DeliveryOrderFormState;
   errors: FieldErrors;
   onFieldChange: <Key extends keyof DeliveryOrderFormState>(key: Key, value: DeliveryOrderFormState[Key]) => void;
-  fieldRefs: React.MutableRefObject<Partial<Record<FieldKey, HTMLElement | null>>>;
 };
 
-function PurchaseSection({ form, errors, preview, onFieldChange, fieldRefs }: SectionProps & { preview: FinancialPreview }) {
+function PurchaseSection({ form, errors, preview, onFieldChange }: SectionProps & { preview: FinancialPreview }) {
   return (
     <Card>
       <CardHeader><CardTitle>Biaya Mitra</CardTitle></CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
-        <FormInput label="Harga Angkut" required inputMode="numeric" value={form.transportPrice} error={errors.transportPrice} inputRef={(node) => { fieldRefs.current.transportPrice = node; }} onChange={(value) => onFieldChange("transportPrice", value)} />
-        <FormInput label="Uang Jalan" optional inputMode="numeric" value={form.roadMoney} error={errors.roadMoney} inputRef={(node) => { fieldRefs.current.roadMoney = node; }} onChange={(value) => onFieldChange("roadMoney", value)} />
-        <FormInput label="Uang Pijak Gas" optional inputMode="numeric" value={form.gasMoney} error={errors.gasMoney} inputRef={(node) => { fieldRefs.current.gasMoney = node; }} onChange={(value) => onFieldChange("gasMoney", value)} />
+        <FormInput field="transportPrice" label="Harga Angkut" required inputMode="numeric" value={form.transportPrice} error={errors.transportPrice} onChange={(value) => onFieldChange("transportPrice", value)} />
+        <FormInput field="roadMoney" label="Uang Jalan" optional inputMode="numeric" value={form.roadMoney} error={errors.roadMoney} onChange={(value) => onFieldChange("roadMoney", value)} />
+        <FormInput field="gasMoney" label="Uang Pijak Gas" optional inputMode="numeric" value={form.gasMoney} error={errors.gasMoney} onChange={(value) => onFieldChange("gasMoney", value)} />
         <div>
-          <FormInput label="PPh 23 Mitra" optional inputMode="numeric" value={form.isPartnerPphManual ? form.partnerPph23 : String(preview.autoPartnerPph23)} error={errors.partnerPph23} inputRef={(node) => { fieldRefs.current.partnerPph23 = node; }} onChange={(value) => { onFieldChange("partnerPph23", value); onFieldChange("isPartnerPphManual", true); }} />
+          <FormInput field="partnerPph23" label="PPh 23 Mitra" optional inputMode="numeric" value={form.isPartnerPphManual ? form.partnerPph23 : String(preview.autoPartnerPph23)} error={errors.partnerPph23} onChange={(value) => { onFieldChange("partnerPph23", value); onFieldChange("isPartnerPphManual", true); }} />
           <Button type="button" variant="link" size="sm" className="mt-1 px-0" onClick={() => { onFieldChange("isPartnerPphManual", false); onFieldChange("partnerPph23", ""); }}>Gunakan otomatis</Button>
         </div>
         <ReadOnlyField label="Total Pembelian" value={formatRupiah(preview.purchaseTotal)} />
@@ -464,7 +451,7 @@ function PurchaseSection({ form, errors, preview, onFieldChange, fieldRefs }: Se
   );
 }
 
-function SalesSection({ isOpen, onToggle, form, errors, preview, onFieldChange, fieldRefs }: SectionProps & { isOpen: boolean; onToggle: () => void; preview: FinancialPreview }) {
+function SalesSection({ isOpen, onToggle, form, errors, preview, onFieldChange }: SectionProps & { isOpen: boolean; onToggle: () => void; preview: FinancialPreview }) {
   return (
     <Card>
       <button type="button" onClick={onToggle} className="flex w-full items-center justify-between px-6 text-left">
@@ -473,10 +460,10 @@ function SalesSection({ isOpen, onToggle, form, errors, preview, onFieldChange, 
       </button>
       {isOpen ? (
         <CardContent className="mt-4 grid gap-4 md:grid-cols-2">
-          <FormInput label="Harga Jual" optional inputMode="numeric" value={form.sellingPrice} error={errors.sellingPrice} inputRef={(node) => { fieldRefs.current.sellingPrice = node; }} onChange={(value) => onFieldChange("sellingPrice", value)} />
-          <FormInput label="Uang Pijak Gas Penjualan" optional inputMode="numeric" value={form.salesGasMoney} error={errors.salesGasMoney} inputRef={(node) => { fieldRefs.current.salesGasMoney = node; }} onChange={(value) => onFieldChange("salesGasMoney", value)} />
+          <FormInput field="sellingPrice" label="Harga Jual" optional inputMode="numeric" value={form.sellingPrice} error={errors.sellingPrice} onChange={(value) => onFieldChange("sellingPrice", value)} />
+          <FormInput field="salesGasMoney" label="Uang Pijak Gas Penjualan" optional inputMode="numeric" value={form.salesGasMoney} error={errors.salesGasMoney} onChange={(value) => onFieldChange("salesGasMoney", value)} />
           <div>
-            <FormInput label="PPh 23 Penjualan" optional inputMode="numeric" value={form.isSalesPphManual ? form.salesPph23 : String(preview.autoSalesPph23)} error={errors.salesPph23} inputRef={(node) => { fieldRefs.current.salesPph23 = node; }} onChange={(value) => { onFieldChange("salesPph23", value); onFieldChange("isSalesPphManual", true); }} />
+            <FormInput field="salesPph23" label="PPh 23 Penjualan" optional inputMode="numeric" value={form.isSalesPphManual ? form.salesPph23 : String(preview.autoSalesPph23)} error={errors.salesPph23} onChange={(value) => { onFieldChange("salesPph23", value); onFieldChange("isSalesPphManual", true); }} />
             <Button type="button" variant="link" size="sm" className="mt-1 px-0" onClick={() => { onFieldChange("isSalesPphManual", false); onFieldChange("salesPph23", ""); }}>Gunakan otomatis</Button>
           </div>
           <ReadOnlyField label="Total Penjualan" value={formatRupiah(preview.salesTotal)} />
@@ -502,12 +489,12 @@ function SummaryCard({ preview }: { preview: FinancialPreview }) {
   );
 }
 
-function FormInput({ label, value, onChange, error, required, optional, type = "text", inputMode, suffix, inputRef }: { label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; optional?: boolean; type?: "text" | "date"; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; suffix?: string; inputRef?: (node: HTMLInputElement | null) => void }) {
+function FormInput({ field, label, value, onChange, error, required, optional, type = "text", inputMode, suffix }: { field: FieldKey; label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean; optional?: boolean; type?: "text" | "date"; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; suffix?: string }) {
   return (
     <label className="block text-sm font-medium">
       <span className="flex items-center gap-2">{label}{required ? <span className="text-destructive">*</span> : null}{optional ? <span className="text-xs font-normal text-muted-foreground">Opsional</span> : null}</span>
       <span className="relative mt-2 block">
-        <input ref={inputRef} type={type} inputMode={inputMode} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} className={cn("h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", suffix ? "pr-12" : "", error ? "border-destructive focus:border-destructive" : "")} />
+        <input data-field={field} type={type} inputMode={inputMode} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} className={cn("h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30", suffix ? "pr-12" : "", error ? "border-destructive focus:border-destructive" : "")} />
         {suffix ? <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{suffix}</span> : null}
       </span>
       {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
