@@ -2,6 +2,10 @@ import { createStore } from "zustand/vanilla";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { mockDeliveryOrders } from "@/data/mock-delivery-orders";
+import {
+  showcaseDeliveryOrders,
+  showcaseDeliveryOrderTransactions,
+} from "@/data/mock-invoice-showcase";
 import { mockPartners } from "@/data/mock-partners";
 import {
   createDeliveryOrderFromInput,
@@ -91,15 +95,16 @@ type LegacyPersistedState = Partial<DemoStoreState> & {
 };
 
 function cloneSeedDeliveryOrders(): DeliveryOrder[] {
-  return mockDeliveryOrders.map((order) => ({ ...order }));
+  return [...showcaseDeliveryOrders, ...mockDeliveryOrders].map((order) => ({ ...order }));
 }
 
 function cloneSeedDeliveryOrderTransactions(): DeliveryOrderTransaction[] {
-  const transactions = cloneSeedDeliveryOrders().map(legacyDeliveryOrderToTransaction);
+  const transactions = mockDeliveryOrders.map(legacyDeliveryOrderToTransaction);
   const examples = createMultiTransactionInvoiceExamples(cloneSeedDeliveryOrders());
   const replacedParentIds = new Set(examples.transactions.map((transaction) => transaction.deliveryOrderId));
 
   return [
+    ...showcaseDeliveryOrderTransactions.map((transaction) => ({ ...transaction })),
     ...examples.transactions,
     ...transactions.filter((transaction) => !replacedParentIds.has(transaction.deliveryOrderId)),
   ];
