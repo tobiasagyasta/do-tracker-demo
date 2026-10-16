@@ -259,7 +259,7 @@ export function InvoiceBuilder({
       <div>
         <h2 className="text-2xl font-semibold tracking-tight text-foreground">Buat Invoice Penjualan</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Pilih transaksi eligible dari satu customer, bisa lintas Delivery Order.
+          Satu invoice dapat menggabungkan beberapa DO milik customer yang sama.
         </p>
       </div>
 
@@ -335,7 +335,7 @@ export function InvoiceBuilder({
           <Card>
             <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle>3. Pilih Transaksi</CardTitle>
+                <CardTitle>3. Pilih Delivery Order &amp; Transaksi</CardTitle>
                 <CardDescription>Hanya transaksi eligible, belum invoiced, dan sesuai customer yang tampil.</CardDescription>
               </div>
               <label className="flex items-center gap-2 text-sm font-medium">
@@ -345,7 +345,7 @@ export function InvoiceBuilder({
                   onChange={(event) => toggleAllVisible(event.target.checked)}
                   className="size-4 rounded border"
                 />
-                Select all visible
+                Pilih Semua DO &amp; Transaksi
               </label>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -398,24 +398,41 @@ function TransactionGroupCard({
   const transactionIds = group.transactions.map((transaction) => transaction.id);
   const selectedTransactions = group.transactions.filter((transaction) => selectedIds.has(transaction.id));
   const selectedTonnage = selectedTransactions.reduce((total, transaction) => total + transaction.tonnage, 0);
-  const allSelected = transactionIds.every((id) => selectedIds.has(id));
+  const selectedSubtotal = selectedTransactions.reduce(
+    (total, transaction) => total + transaction.tonnage * transaction.salesRatePerTon + transaction.roadMoney,
+    0,
+  );
+  const allSelected = selectedTransactions.length === group.transactions.length;
+  const partiallySelected = selectedTransactions.length > 0 && !allSelected;
+  const groupCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (groupCheckboxRef.current) groupCheckboxRef.current.indeterminate = partiallySelected;
+  }, [partiallySelected]);
 
   return (
-    <section className="rounded-lg border p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <label className="flex items-center gap-2 font-semibold">
-            <input type="checkbox" checked={allSelected} onChange={(event) => onToggleGroup(transactionIds, event.target.checked)} className="size-4 rounded border" />
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="space-y-3 border-b bg-muted/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-3 text-base font-bold text-foreground">
+            <input ref={groupCheckboxRef} type="checkbox" checked={allSelected} onChange={(event) => onToggleGroup(transactionIds, event.target.checked)} className="size-4 shrink-0 rounded border" />
             {group.order.doNumber}
           </label>
-          <p className="mt-1 text-sm text-muted-foreground">{group.order.originMine} -&gt; {group.order.destinationPort}</p>
+          <span className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", selectedTransactions.length > 0 ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground")}>
+            {allSelected ? "Semua dipilih" : partiallySelected ? "Dipilih sebagian" : "Belum dipilih"}
+          </span>
         </div>
         <p className="text-sm text-muted-foreground">
-          {selectedTransactions.length}/{group.transactions.length} dipilih · {formatTonnage(selectedTonnage)}
+          {group.order.originMine} -&gt; {group.order.destinationPort}
         </p>
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm font-medium">
+          <span>{selectedTransactions.length}/{group.transactions.length} transaksi dipilih</span>
+          <span>{formatTonnage(selectedTonnage)} dipilih</span>
+          <span>Subtotal: {formatRupiah(selectedSubtotal)}</span>
+        </div>
       </div>
 
-      <div className="mt-4 hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto px-4 pb-4 md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left">
@@ -447,7 +464,7 @@ function TransactionGroupCard({
         </table>
       </div>
 
-      <div className="mt-4 space-y-3 md:hidden">
+      <div className="space-y-3 p-4 md:hidden">
         {group.transactions.map((transaction) => (
           <label key={transaction.id} className="block rounded-md border p-3">
             <span className="flex items-start gap-3">
@@ -482,12 +499,12 @@ function SelectionSummary({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Selection Summary</CardTitle>
+        <CardTitle>Ringkasan Invoice</CardTitle>
         <CardDescription>Ringkasan selalu mengikuti line snapshot draft.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <SummaryLine label="Transaksi" value={String(selectedTransactionCount)} />
-        <SummaryLine label="DO Group" value={String(totals.groups.length)} />
+        <SummaryLine label="Delivery Order" value={String(totals.groups.length)} />
         <SummaryLine label="Total Tonase" value={formatTonnage(totalTonnage)} />
         <SummaryLine label="Subtotal" value={formatRupiah(totals.subtotal)} />
         <SummaryLine label="PPh 23" value={`-${formatRupiah(totals.pph23Amount)}`} />
@@ -503,7 +520,7 @@ function SelectionSummary({
                 <div key={group.deliveryOrderId} className="rounded-md border p-3 text-sm">
                   <p className="font-medium">{group.doNumber}</p>
                   <p className="mt-1 text-muted-foreground">{group.lines.length} trx · {formatTonnage(group.groupTonnage)}</p>
-                  <p className="mt-1 text-muted-foreground">Tarif: {rates.size === 1 ? formatRupiah(group.lines[0].salesRatePerTon) : "Mixed rates"}</p>
+                  <p className="mt-1 text-muted-foreground">Tarif: {rates.size === 1 ? formatRupiah(group.lines[0].salesRatePerTon) : "Tarif berbeda"}</p>
                   <p className="mt-2 font-semibold">Subtotal {formatRupiah(group.groupSubtotal)}</p>
                 </div>
               );
@@ -512,7 +529,7 @@ function SelectionSummary({
         ) : null}
 
         <Button type="button" className="w-full" onClick={onIssue} disabled={isSubmitting || selectedTransactionCount === 0}>
-          {isSubmitting ? "Menerbitkan..." : "Terbitkan Invoice"}
+          {isSubmitting ? "Menerbitkan..." : "Terbitkan Invoice Gabungan"}
         </Button>
       </CardContent>
     </Card>
